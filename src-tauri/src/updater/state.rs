@@ -3,14 +3,28 @@ use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-/// Snoozes that survive across app restarts. Stored as a JSON sidecar
-/// (not in the user-editable TOML) because they are state-machine flags,
-/// not preferences.
+/// Updater state that survives across app restarts. Stored as a JSON
+/// sidecar (not in the user-editable TOML) because these are state-machine
+/// flags, not preferences. Holds: per-surface snooze deadlines (so "Later"
+/// persists across launches) and the last-launched binary version (so the
+/// startup sequence can detect a fresh upgrade and reset stale TCC grants).
+///
+/// Kept named `SnoozeSidecar` for back-compat with existing sidecar files
+/// on user disks. Renaming would orphan their snooze state.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SnoozeSidecar {
     /// Unix seconds. `None` means not snoozed.
+    #[serde(default)]
     pub settings_snoozed_until: Option<u64>,
+    #[serde(default)]
     pub chat_snoozed_until: Option<u64>,
+    /// SemVer string of the binary that wrote this sidecar last. Used to
+    /// detect upgrades on startup so we can reset the stale TCC grants
+    /// macOS keeps for the previous code signature. Absent on first ever
+    /// launch and on sidecars written by pre-0.8.2 builds; both cases are
+    /// treated as "no upgrade detected, do nothing."
+    #[serde(default)]
+    pub last_launched_version: Option<String>,
 }
 
 impl SnoozeSidecar {
@@ -23,9 +37,10 @@ impl SnoozeSidecar {
     }
 
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
-        // SnoozeSidecar holds two Option<u64> fields, so serde_json::to_string
-        // is provably infallible here. expect() documents the invariant; if a
-        // future field ever changes that, the panic surface is loud and local.
+        // The struct holds plain Option<u64>/Option<String> fields, so
+        // serde_json::to_string is provably infallible here. expect()
+        // documents the invariant; if a future field ever changes that,
+        // the panic surface is loud and local.
         let s = serde_json::to_string(self).expect("SnoozeSidecar serializes");
         std::fs::write(path, s)
     }
@@ -64,6 +79,16 @@ impl UpdaterState {
     pub fn set_update(&self, update: Option<AvailableUpdate>) {
         let mut inner = self.inner.lock().expect("updater state mutex");
         inner.update = update;
+        inner.last_check_at = Some(SystemTime::now());
+    }
+
+    /// Records that a check was attempted at the current wall clock without
+    /// touching `update`. Use this on transient failures (network errors,
+    /// 4xx/5xx, malformed manifest) so the UI can show "Last checked X
+    /// seconds ago" instead of "Never". Preserves any previously known
+    /// available update so a flaky network does not erase real signal.
+    pub fn mark_check_attempted(&self) {
+        let mut inner = self.inner.lock().expect("updater state mutex");
         inner.last_check_at = Some(SystemTime::now());
     }
 
@@ -119,6 +144,7 @@ mod tests {
         let original = SnoozeSidecar {
             settings_snoozed_until: Some(1_700_000_000),
             chat_snoozed_until: Some(1_700_001_000),
+            last_launched_version: None,
         };
         original.save(&path).unwrap();
 
@@ -133,6 +159,41 @@ mod tests {
 
         let loaded = SnoozeSidecar::load(&path).unwrap();
         assert_eq!(loaded, SnoozeSidecar::default());
+    }
+
+    #[test]
+    fn snooze_sidecar_round_trips_last_launched_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("updater_state.json");
+
+        let original = SnoozeSidecar {
+            settings_snoozed_until: None,
+            chat_snoozed_until: None,
+            last_launched_version: Some("0.8.1".to_string()),
+        };
+        original.save(&path).unwrap();
+
+        let loaded = SnoozeSidecar::load(&path).unwrap();
+        assert_eq!(loaded, original);
+    }
+
+    #[test]
+    fn snooze_sidecar_back_compat_old_file_without_version_field() {
+        // Old (pre-0.8.2) sidecar files were written without the
+        // `last_launched_version` field. Loading must default it to None
+        // rather than fail, otherwise existing snooze state would be lost.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("updater_state.json");
+        std::fs::write(
+            &path,
+            r#"{"settings_snoozed_until":1700000000,"chat_snoozed_until":null}"#,
+        )
+        .unwrap();
+
+        let loaded = SnoozeSidecar::load(&path).unwrap();
+        assert_eq!(loaded.settings_snoozed_until, Some(1_700_000_000));
+        assert!(loaded.chat_snoozed_until.is_none());
+        assert!(loaded.last_launched_version.is_none());
     }
 
     #[test]
@@ -155,6 +216,39 @@ mod tests {
         let snap = state.snapshot();
         assert!(snap.last_check_at_unix.is_some());
         assert_eq!(snap.update.as_ref().unwrap().version, "0.8.0");
+    }
+
+    #[test]
+    fn mark_check_attempted_updates_timestamp_without_touching_update() {
+        let state = UpdaterState::default();
+        // No update yet, no last_check_at.
+        assert!(state.snapshot().last_check_at_unix.is_none());
+
+        state.mark_check_attempted();
+        let snap = state.snapshot();
+        assert!(snap.last_check_at_unix.is_some());
+        assert!(snap.update.is_none());
+    }
+
+    #[test]
+    fn mark_check_attempted_preserves_existing_update() {
+        let state = UpdaterState::default();
+        state.set_update(Some(AvailableUpdate {
+            version: "0.9.0".to_string(),
+            notes_url: None,
+        }));
+        let before = state.snapshot();
+        let prior_ts = before.last_check_at_unix.unwrap();
+
+        // Sleep a tick so the new timestamp differs.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        state.mark_check_attempted();
+        let after = state.snapshot();
+
+        // Update info preserved across the failed attempt.
+        assert_eq!(after.update.as_ref().unwrap().version, "0.9.0");
+        // Timestamp moved forward.
+        assert!(after.last_check_at_unix.unwrap() > prior_ts);
     }
 
     #[test]
