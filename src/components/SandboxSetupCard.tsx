@@ -8,7 +8,7 @@ import { invoke } from '@tauri-apps/api/core';
  */
 export function SandboxSetupCard() {
   const SETUP_URL =
-    'https://github.com/quiet-node/thuki#step-2-setup-the-search-sandbox-optional-required-for-search';
+    'https://github.com/ayzekhdawy/thukiwin#search-sandbox-setup';
 
   const handleOpenGuide = () => {
     void invoke('open_url', { url: SETUP_URL });
@@ -29,15 +29,14 @@ export function SandboxSetupCard() {
           Search service is offline
         </p>
         <p className="text-[11.5px] text-white/[0.38] leading-snug mt-0.5">
-          Follow the{' '}
+          Run <code className="text-white/50 bg-white/[0.06] px-1 rounded text-[11px]">docker compose up -d</code> in the <code className="text-white/50 bg-white/[0.06] px-1 rounded text-[11px]">sandbox/</code> folder, or follow the{' '}
           <button
             type="button"
             onClick={handleOpenGuide}
             className="text-white/50 underline decoration-white/20 underline-offset-2 hover:text-white/70 transition-colors cursor-pointer"
           >
             Setup Guide
-          </button>{' '}
-          to enable local agentic search.
+          </button>.
         </p>
       </div>
     </div>

@@ -4,7 +4,6 @@ import {
   useState,
   useEffect,
   useCallback,
-  useMemo,
   useRef,
   useLayoutEffect,
 } from 'react';
@@ -12,61 +11,60 @@ import { listen } from '@tauri-apps/api/event';
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { LogicalSize } from '@tauri-apps/api/dpi';
+
 import { useOllama } from './hooks/useOllama';
 import type { Message } from './hooks/useOllama';
+import { useTts } from './hooks/useTts';
 import { useConversationHistory } from './hooks/useConversationHistory';
+import { useAgentMode } from './hooks/useAgentMode';
 import { useModelSelection } from './hooks/useModelSelection';
-import { useModelCapabilities } from './hooks/useModelCapabilities';
-import {
-  getCapabilityConflict,
-  getEnvironmentMessage,
-  isComposeCapabilityConflict,
-} from './utils/capabilityConflicts';
+import { AgentIndicator } from './components/AgentIndicator';
+import { TipBar } from './components/TipBar';
+import { useTips } from './hooks/useTips';
+import { MinibarView } from './components/MinibarView';
+import { ModelPicker } from './components/ModelPicker';
+import { CapabilityMismatchStrip } from './components/CapabilityMismatchStrip';
+import { getCapabilityConflicts, hasVisionConflict } from './config/capabilityConflicts';
 import { ConversationView } from './view/ConversationView';
-import { AskBarView } from './view/AskBarView';
+import { AskBarView, MAX_IMAGES } from './view/AskBarView';
 import { OnboardingView } from './view/onboarding/index';
 import type { OnboardingStage } from './view/onboarding/index';
 import { HistoryPanel } from './components/HistoryPanel';
-import { ModelPickerPanel } from './components/ModelPickerPanel';
 import { ImagePreviewModal } from './components/ImagePreviewModal';
-import { TipBar } from './components/TipBar';
-import { UpdateFooterBar } from './components/UpdateFooterBar';
-import { useTips } from './hooks/useTips';
-import { useUpdater } from './hooks/useUpdater';
 import type { AttachedImage } from './types/image';
 import { MAX_IMAGE_SIZE_BYTES } from './types/image';
-import { useConfig } from './contexts/ConfigContext';
+import { quote } from './config';
 import {
   COMMANDS,
   SCREEN_CAPTURE_PLACEHOLDER,
   buildPrompt,
 } from './config/commands';
+import { detectComputerUseIntent } from './utils/intentDetection';
 import './App.css';
+
+/** Fallback model name used before get_model_config resolves at startup. */
+const DEFAULT_MODEL_FALLBACK = 'gemini-3-flash-preview';
 
 const OVERLAY_VISIBILITY_EVENT = 'thuki://visibility';
 const ONBOARDING_EVENT = 'thuki://onboarding';
-
-/** Total transparent padding around the morphing container: pt-2(8) + pb-6(24) + motion py-2(16). */
-const CONTAINER_VERTICAL_PADDING = 48;
-
-/**
- * Collapsed-bar height used as the seed for the show-time upward-grow Y math
- * and as the fallback when the morphing container reports `offsetHeight === 0`.
- * Baked in: only observable for a single frame at show time before the
- * ResizeObserver replaces it with the real measured height, so a user-tunable
- * knob would have no perceptible effect.
- */
-const COLLAPSED_WINDOW_HEIGHT = 80;
 
 /**
  * Authoritative deadline from the start of the hide transition to the native
  * window hide call. Accounts for WKWebView `requestAnimationFrame` throttling
  * in non-key windows, which stalls spring animations indefinitely and makes
  * `AnimatePresence.onExitComplete` unreliable when the panel is unfocused.
- * Baked in: subjectively imperceptible across the usable range, and lowering
- * it below the exit-animation duration causes a visible pop.
  */
 const HIDE_COMMIT_DELAY_MS = 350;
+
+/** Must match `OVERLAY_LOGICAL_WIDTH` in `src-tauri/src/lib.rs`. */
+const OVERLAY_WIDTH = 650;
+/** Total transparent padding around the morphing container: pt-2(8) + pb-6(24) + motion py-2(16). */
+const CONTAINER_VERTICAL_PADDING = 48;
+/** Max morphing-container height in chat mode (matches `max-h-[600px]`) + vertical padding. */
+const MAX_CHAT_WINDOW_HEIGHT = 600 + CONTAINER_VERTICAL_PADDING;
+
+/** Must match `OVERLAY_LOGICAL_HEIGHT_COLLAPSED` in `src-tauri/src/lib.rs`. */
+const COLLAPSED_WINDOW_HEIGHT = 60;
 
 /**
  * Parses a message to detect all valid slash commands present as whole words.
@@ -101,7 +99,7 @@ type OverlayVisibilityPayload =
       screen_bottom_y: number | null;
     }
   | { state: 'hide-request' };
-type OverlayState = 'visible' | 'hidden' | 'hiding';
+type OverlayState = 'visible' | 'hidden' | 'hiding' | 'minibar';
 
 /**
  * Main application orchestrator for Thuki.
@@ -116,6 +114,8 @@ type OverlayState = 'visible' | 'hidden' | 'hiding';
 function App() {
   const [query, setQuery] = useState('');
   const [overlayState, setOverlayState] = useState<OverlayState>('hidden');
+  const overlayStateRef = useRef<OverlayState>(overlayState);
+  overlayStateRef.current = overlayState;
   /** Non-null when the backend signals onboarding is needed; holds the current stage. */
   const [onboardingStage, setOnboardingStage] =
     useState<OnboardingStage | null>(null);
@@ -126,9 +126,6 @@ function App() {
    * but rendered differently based on `isChatMode`).
    */
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-
-  /** Whether the model picker panel is currently open. Mutually exclusive with `isHistoryOpen`. */
-  const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);
   /**
    * True when the user clicked + while an unsaved conversation is active.
    * Causes the history dropdown to show a SwitchConfirmation prompt instead
@@ -142,37 +139,6 @@ function App() {
    * without going through React state (direct DOM mutation + CSS transition).
    */
   const morphingContainerNodeRef = useRef<HTMLDivElement | null>(null);
-
-  const {
-    activeModel,
-    availableModels,
-    ollamaReachable,
-    refreshModels,
-    setActiveModel,
-  } = useModelSelection();
-
-  const { capabilities: modelCapabilities, refresh: refreshModelCapabilities } =
-    useModelCapabilities();
-
-  /** Capability flags for the currently active model, or undefined if not loaded yet. */
-  const activeModelCapabilities = activeModel
-    ? modelCapabilities[activeModel]
-    : undefined;
-
-  /**
-   * Pulses true to trigger the ask-bar shake animation when the
-   * submit-time gate refuses a message, then resets so the next blocked
-   * submit gets its own animation. Reset is set just over the 500 ms
-   * keyframe duration in `AskBarView` so the bar never snaps back
-   * mid-animation if React schedules the state flip on the exact frame
-   * Framer is finishing.
-   */
-  const [shakeAskBar, setShakeAskBar] = useState(false);
-  useEffect(() => {
-    if (!shakeAskBar) return;
-    const timer = setTimeout(() => setShakeAskBar(false), 600);
-    return () => clearTimeout(timer);
-  }, [shakeAskBar]);
 
   const {
     conversationId,
@@ -200,26 +166,20 @@ function App() {
     [persistTurn],
   );
 
-  const {
-    messages,
-    ask,
-    askSearch,
-    cancel,
-    isGenerating,
-    searchStage,
-    reset,
-    loadMessages,
-    getTraceConversationId,
-  } = useOllama(activeModel, handleTurnComplete);
+  const { messages, ask, askSearch, cancel, isGenerating, reset, loadMessages } =
+    useOllama(handleTurnComplete);
 
-  /**
-   * Sticky flag: once the user invokes `/search`, subsequent submits in the
-   * same conversation route through the search pipeline automatically until
-   * the pipeline delivers a final answer (or the conversation is reset/loaded
-   * /closed). The backend LLM classifies each turn and decides whether to
-   * clarify, answer from context, or perform a fresh web search.
-   */
-  const [searchActive, setSearchActive] = useState(false);
+  const {
+    speakingMessageId,
+    speak: ttsSpeak,
+    stop: ttsStop,
+    fetchVoices,
+    voices: ttsVoices,
+    selectedVoice,
+    setSelectedVoice,
+    privacyAcknowledged,
+    acknowledgePrivacy,
+  } = useTts();
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -252,6 +212,10 @@ function App() {
   /** Error message from a failed /screen capture. Shown inline above the ask
    *  bar so the user knows capture failed rather than seeing no response. */
   const [captureError, setCaptureError] = useState<string | null>(null);
+  /** Capability conflict messages when the active model doesn't support a
+   *  required capability (e.g., vision for /screen or image uploads, thinking
+   *  for /think). Shown via CapabilityMismatchStrip above the ask bar. */
+  const [capabilityConflicts, setCapabilityConflicts] = useState<string[]>([]);
   /**
    * Set to true when a /screen capture is dispatched, false when it resolves
    * or when the user cancels. Lets the async tail in handleScreenSubmit
@@ -274,14 +238,17 @@ function App() {
   );
 
   /**
-   * Session counter - incremented on each overlay open. Used in the motion
+   * Session counter — incremented on each overlay open. Used in the motion
    * key to force AnimatePresence to fully unmount the stale tree before
    * mounting a fresh one, preventing a flash of the previous conversation.
    */
   const [sessionId, setSessionId] = useState(0);
   const [selectedContext, setSelectedContext] = useState<string | null>(null);
-  const config = useConfig();
-  const quote = config.quote;
+  const modelSelection = useModelSelection();
+
+  const agentMode = useAgentMode(modelSelection.active
+    ? { active: modelSelection.active }
+    : null);
 
   /**
    * True when the window is near the screen bottom and should grow upward.
@@ -290,11 +257,12 @@ function App() {
   const [growsUpward, setGrowsUpward] = useState(false);
 
   /**
-   * Determines whether the UI has entered "chat mode" - i.e., the morphing
+   * Determines whether the UI has entered "chat mode" — i.e., the morphing
    * chat window state with message bubbles. Transitions from input-bar mode
    * to chat-window mode are animated via Framer Motion `layout` prop.
    */
   const isChatMode = messages.length > 0 || isGenerating || isSubmitPending;
+  const { tip, tipKey, isVisible: tipVisible } = useTips(isChatMode);
   const previousIsChatModeRef = useRef(isChatMode);
 
   /**
@@ -304,18 +272,6 @@ function App() {
    */
   const canSave = !isGenerating && messages.some((m) => m.role === 'assistant');
   const shouldRenderOverlay = overlayState === 'visible';
-  const {
-    tip: activeTip,
-    tipKey,
-    isVisible: isTipVisible,
-  } = useTips(shouldRenderOverlay);
-
-  const updater = useUpdater();
-  const chatSnoozed = useMemo(
-    () => (updater.state.chat_snoozed_until ?? 0) * 1000 > Date.now(),
-    [updater.state.chat_snoozed_until],
-  );
-  const showUpdate = !!updater.state.update && !chatSnoozed;
 
   /**
    * Reference stored for ResizeObserver cleanup.
@@ -350,34 +306,6 @@ function App() {
   const maxHeightRef = useRef(0);
 
   /**
-   * Mirrors of the user-tunable window dimensions from `[window]` config.
-   * Stored in refs so the ResizeObserver closure can read the latest value
-   * without being recreated on each config edit (which would tear down /
-   * recreate the observer mid-stream). The effect below keeps refs in sync
-   * with React state and proactively re-applies width edits via `setSize`
-   * (the ResizeObserver only fires on DOM height changes, so a pure width
-   * change would otherwise stay invisible until the next content reflow).
-   */
-  const overlayWidthRef = useRef(config.window.overlayWidth);
-  const maxChatHeightRef = useRef(config.window.maxChatHeight);
-  useEffect(() => {
-    overlayWidthRef.current = config.window.overlayWidth;
-    maxChatHeightRef.current = config.window.maxChatHeight;
-    /* v8 ignore start -- requires real Tauri webview to setSize */
-    if (overlayState === 'visible') {
-      const node = morphingContainerNodeRef.current;
-      const currentHeight = node
-        ? Math.ceil(node.getBoundingClientRect().height) +
-          CONTAINER_VERTICAL_PADDING
-        : COLLAPSED_WINDOW_HEIGHT;
-      void getCurrentWindow().setSize(
-        new LogicalSize(config.window.overlayWidth, currentHeight),
-      );
-    }
-    /* v8 ignore stop */
-  }, [config.window.overlayWidth, config.window.maxChatHeight, overlayState]);
-
-  /**
    * Callback ref to reliably attach the ResizeObserver when the conditionally
    * rendered Framer Motion container actually mounts in the DOM. This fixes
    * the bug where a standard useEffect would run before the DOM node was ready,
@@ -400,6 +328,7 @@ function App() {
         /* v8 ignore start -- ResizeObserver callback requires a native browser resize event */
         (entries) => {
           requestAnimationFrame(() => {
+            if (overlayStateRef.current === 'minibar') return;
             for (const entry of entries) {
               const rect = entry.target.getBoundingClientRect();
               // Total vertical room: 8px (pt-2) + 24px (pb-6) + 16px (motion py-2) = 48px.
@@ -425,12 +354,12 @@ function App() {
                 void invoke('set_window_frame', {
                   x,
                   y: newY,
-                  width: overlayWidthRef.current,
+                  width: OVERLAY_WIDTH,
                   height: targetHeight,
                 });
               } else {
                 void getCurrentWindow().setSize(
-                  new LogicalSize(overlayWidthRef.current, targetHeight),
+                  new LogicalSize(OVERLAY_WIDTH, targetHeight),
                 );
               }
             }
@@ -454,16 +383,6 @@ function App() {
     }
   }, [isGenerating]);
 
-  /* eslint-disable @eslint-react/set-state-in-effect -- intentional: close
-     the picker when the user triggers generation so it can't stay open over
-     a streaming response. No secondary effects are triggered by this reset. */
-  useEffect(() => {
-    if (isGenerating || isSubmitPending) {
-      setIsModelPickerOpen(false);
-    }
-  }, [isGenerating, isSubmitPending]);
-  /* eslint-enable @eslint-react/set-state-in-effect */
-
   /**
    * Replays the entrance sequence by transitioning the overlay to the visible state.
    * Clears conversation state for a fresh session each time the overlay appears.
@@ -478,8 +397,7 @@ function App() {
       const shouldGrowUp =
         windowY !== null &&
         screenBottomY !== null &&
-        windowY + maxChatHeightRef.current + CONTAINER_VERTICAL_PADDING >
-          screenBottomY;
+        windowY + MAX_CHAT_WINDOW_HEIGHT > screenBottomY;
       growsUpwardRef.current = shouldGrowUp;
       setGrowsUpward(shouldGrowUp);
       maxHeightRef.current = 0;
@@ -493,7 +411,6 @@ function App() {
       setQuery('');
       setSelectedContext(context);
       setIsHistoryOpen(false);
-      setIsModelPickerOpen(false);
       setAttachedImages((prev) => {
         for (const img of prev) URL.revokeObjectURL(img.blobUrl);
         return [];
@@ -504,14 +421,12 @@ function App() {
       setIsSubmitPending(false);
       setPendingUserMessage(null);
       setCaptureError(null);
-      setSearchActive(false);
 
-      void refreshModels();
       reset();
       resetHistory();
       setOverlayState('visible');
     },
-    [reset, resetHistory, refreshModels],
+    [reset, resetHistory],
   );
 
   /**
@@ -519,12 +434,11 @@ function App() {
    * deferred until Framer Motion finishes the exit transition.
    */
   const requestHideOverlay = useCallback(() => {
-    void cancel();
+    cancel();
     growsUpwardRef.current = false;
     setGrowsUpward(false);
     screenCapturePendingRef.current = false;
     screenCaptureInputSnapshotRef.current = null;
-    setSearchActive(false);
     setSelectedContext(null);
     setPreviewImageUrl(null);
     setAttachedImages((prev) => {
@@ -542,39 +456,9 @@ function App() {
   /** Ref attached to the chat-mode history dropdown for click-outside detection. */
   const historyDropdownRef = useRef<HTMLDivElement>(null);
 
-  /** Ref attached to the chat-mode model picker dropdown for click-outside detection. */
-  const modelPickerDropdownRef = useRef<HTMLDivElement>(null);
-  /** Ref attached to the ask-bar mode model picker drawer for click-outside detection. */
-  const modelPickerAskBarRef = useRef<HTMLDivElement>(null);
-
-  /**
-   * Close the model picker when the user clicks outside it, in either mode.
-   * Clicks on any pill trigger (data-model-picker-toggle) are excluded so the
-   * trigger's own onClick can manage the toggle without a double-close race.
-   */
-  useEffect(() => {
-    if (!isModelPickerOpen) return;
-
-    const handleMouseDown = (e: MouseEvent) => {
-      const target = e.target as Element;
-      if (
-        modelPickerDropdownRef.current?.contains(target) ||
-        modelPickerAskBarRef.current?.contains(target) ||
-        target.closest?.('[data-model-picker-toggle]')
-      ) {
-        return;
-      }
-      setIsModelPickerOpen(false);
-    };
-
-    document.addEventListener('mousedown', handleMouseDown);
-    return () => document.removeEventListener('mousedown', handleMouseDown);
-  }, [isModelPickerOpen]);
-
-  /** Toggles the history panel open/closed. Closes model picker (mutually exclusive). */
+  /** Toggles the history panel open/closed. */
   const handleHistoryToggle = useCallback(() => {
     setIsHistoryOpen((prev) => !prev);
-    setIsModelPickerOpen(false);
   }, []);
 
   /**
@@ -639,7 +523,7 @@ function App() {
     const frameId = requestAnimationFrame(() => {
       // 0.4s and slightly softer cubic bezier specifically for upward morph
       container.style.transition = 'height 0.4s cubic-bezier(0.2, 0.8, 0.2, 1)';
-      container.style.height = `${maxChatHeightRef.current}px`;
+      container.style.height = '600px';
     });
 
     return () => cancelAnimationFrame(frameId);
@@ -710,15 +594,12 @@ function App() {
       if (isSaved) {
         await unsave();
       } else {
-        // `save` accepts `string | null` and short-circuits internally when
-        // there is no active model, so the no-model guard lives in one
-        // place rather than duplicated at every call site.
-        await save(messages, activeModel);
+        await save(messages, modelSelection.active ?? DEFAULT_MODEL_FALLBACK);
       }
     } catch {
       // State stays unchanged on failure; feedback is implicit in the icon.
     }
-  }, [isSaved, unsave, save, messages, activeModel]);
+  }, [isSaved, unsave, save, messages, modelSelection.active]);
 
   /**
    * Loads a conversation from history, replacing the current session.
@@ -733,9 +614,8 @@ function App() {
       try {
         const loaded = await loadConversation(id);
         loadMessages(loaded);
-        setSearchActive(false);
       } catch {
-        // Load failed - current session is preserved intact.
+        // Load failed — current session is preserved intact.
       } finally {
         setIsHistoryOpen(false);
       }
@@ -746,7 +626,7 @@ function App() {
   /**
    * Saves the current unsaved session then loads the requested conversation.
    *
-   * If save fails the operation is aborted - we do not load the target
+   * If save fails the operation is aborted — we do not load the target
    * conversation because the current session has not been persisted yet.
    * If save succeeds but load fails the panel is still dismissed; the
    * current session has been saved so no data is lost.
@@ -754,29 +634,28 @@ function App() {
   const handleSaveAndLoad = useCallback(
     async (id: string) => {
       try {
-        await save(messages, activeModel);
+        await save(messages, modelSelection.active ?? DEFAULT_MODEL_FALLBACK);
       } catch {
-        // Save failed - abort to avoid leaving the current session unprotected.
+        // Save failed — abort to avoid leaving the current session unprotected.
         return;
       }
       try {
         const loaded = await loadConversation(id);
         loadMessages(loaded);
-        setSearchActive(false);
       } catch {
-        // Load failed - save already committed; dismiss panel, keep current view.
+        // Load failed — save already committed; dismiss panel, keep current view.
       } finally {
         setIsHistoryOpen(false);
       }
     },
-    [save, messages, loadConversation, loadMessages, activeModel],
+    [save, messages, loadConversation, loadMessages, modelSelection.active],
   );
 
   /**
    * Deletes a conversation from the history panel.
    *
    * When the deleted conversation is the currently active one, only the
-   * persistence state (`resetHistory`) is cleared - messages remain visible
+   * persistence state (`resetHistory`) is cleared — messages remain visible
    * so the user can continue chatting or re-save. The error is intentionally
    * re-thrown so `HistoryPanel` can roll back its optimistic removal.
    */
@@ -807,7 +686,6 @@ function App() {
     screenCaptureInputSnapshotRef.current = null;
     setIsSubmitPending(false);
     setPendingUserMessage(null);
-    setSearchActive(false);
   }, [reset, resetHistory]);
 
   /**
@@ -828,12 +706,12 @@ function App() {
   /** Saves the current conversation then starts a fresh one. */
   const handleSaveAndNew = useCallback(async () => {
     try {
-      await save(messages, activeModel);
+      await save(messages, modelSelection.active ?? DEFAULT_MODEL_FALLBACK);
     } catch {
       return;
     }
     resetForNewConversation();
-  }, [save, messages, resetForNewConversation, activeModel]);
+  }, [save, messages, resetForNewConversation, modelSelection.active]);
 
   /** Discards the current conversation and starts a fresh one. */
   const handleJustNew = useCallback(() => {
@@ -855,7 +733,7 @@ function App() {
     setAttachedImages((prev) => [...prev, ...newImages]);
 
     // Defer backend processing to the next frame so React can render the
-    // blob URL thumbnails immediately - keeps the UI responsive while
+    // blob URL thumbnails immediately — keeps the UI responsive while
     // FileReader + IPC serialisation happen in subsequent event-loop ticks.
     requestAnimationFrame(() => {
       for (let i = 0; i < files.length; i++) {
@@ -902,16 +780,9 @@ function App() {
     (e: React.DragEvent) => {
       e.preventDefault();
       if (isGenerating || isSubmitPending) return;
-      setIsDragOver(
-        attachedImages.length >= config.window.maxImages ? 'max' : 'normal',
-      );
+      setIsDragOver(attachedImages.length >= MAX_IMAGES ? 'max' : 'normal');
     },
-    [
-      isGenerating,
-      isSubmitPending,
-      attachedImages.length,
-      config.window.maxImages,
-    ],
+    [isGenerating, isSubmitPending, attachedImages.length],
   );
 
   const handleRootDragLeave = useCallback((e: React.DragEvent) => {
@@ -932,7 +803,7 @@ function App() {
       if (isGenerating || isSubmitPending) return;
       const files = e.dataTransfer?.files;
       if (!files) return;
-      const remaining = config.window.maxImages - attachedImages.length;
+      const remaining = MAX_IMAGES - attachedImages.length;
       if (remaining <= 0) return;
       const accepted: File[] = [];
       for (let i = 0; i < files.length && accepted.length < remaining; i++) {
@@ -950,7 +821,6 @@ function App() {
       isSubmitPending,
       attachedImages.length,
       handleImagesAttached,
-      config.window.maxImages,
     ],
   );
 
@@ -959,23 +829,24 @@ function App() {
    * lets the user drag-select a screen region, then returns the captured image
    * as a base64 PNG string (or null if the user cancelled).
    * On success, converts the base64 to a File and feeds it into the existing
-   * handleImagesAttached pipeline - identical to a paste or drag-drop.
+   * handleImagesAttached pipeline — identical to a paste or drag-drop.
    */
   const handleScreenshot = useCallback(async () => {
     /* v8 ignore start -- defensive guard: button is always disabled at max images, so this branch is unreachable through normal UI interaction */
-    if (attachedImages.length >= config.window.maxImages) return;
+    if (attachedImages.length >= MAX_IMAGES) return;
     /* v8 ignore stop */
-    const base64 = await invoke<string | null>('capture_screenshot_command');
-    if (!base64) return;
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    const blob = new Blob([bytes], { type: 'image/png' });
-    const file = new File([blob], 'screenshot.png', { type: 'image/png' });
-    handleImagesAttached([file]);
-  }, [attachedImages, handleImagesAttached, config.window.maxImages]);
+    const filePath = await invoke<string>('capture_full_screen_command');
+    if (!filePath) return;
+    const assetUrl = convertFileSrc(filePath);
+    setAttachedImages((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        blobUrl: assetUrl,
+        filePath,
+      },
+    ]);
+  }, [attachedImages]);
 
   /** Removes an attached image from state, revokes the blob URL, and
    *  deletes the staged file from disk if processing completed. */
@@ -1075,9 +946,7 @@ function App() {
 
       let screenshotPath: string;
       try {
-        screenshotPath = await invoke<string>('capture_full_screen_command', {
-          conversationId: getTraceConversationId(),
-        });
+        screenshotPath = await invoke<string>('capture_full_screen_command');
       } catch (e) {
         screenCapturePendingRef.current = false;
         screenCaptureInputSnapshotRef.current = null;
@@ -1122,118 +991,8 @@ function App() {
       }
       setAttachedImages([]);
     },
-    [
-      selectedContext,
-      attachedImages,
-      ask,
-      getTraceConversationId,
-      setSelectedContext,
-      setCaptureError,
-      quote.maxContextLength,
-    ],
+    [selectedContext, attachedImages, ask, setSelectedContext, setCaptureError],
   );
-
-  /**
-   * Live strip message for the current environment + compose state. Drives
-   * the inline `CapabilityMismatchStrip` so the user sees the right cue as
-   * soon as content lands in compose, not only at submit time. The strip
-   * is purely informational: recovery happens through the model picker
-   * chip (or starting Ollama, when that is the actual problem).
-   *
-   * Resolution order matters: environment-state messaging wins over
-   * capability conflicts because telling the user to "switch models"
-   * makes no sense when Ollama is down or has no models installed. Once
-   * an active model exists and Ollama is reachable, fall through to the
-   * per-message capability check.
-   */
-  /**
-   * History-state derived from the current `messages` array. Drives the
-   * Phase B history-based capability strip: a heads-up when the active
-   * model lacks a capability earlier turns relied on (vision, thinking).
-   * `messages.some(...)` is O(n) per render but bounded by typical chat
-   * lengths and memoized against the messages reference.
-   */
-  const historyCapabilityState = useMemo(() => {
-    let maxImages = 0;
-    let hasThinking = false;
-    for (const m of messages) {
-      const count = m.imagePaths?.length ?? 0;
-      if (count > maxImages) maxImages = count;
-      if ((m.thinkingContent?.length ?? 0) > 0) hasThinking = true;
-    }
-    return {
-      historyHasImages: maxImages > 0,
-      historyHasThinking: hasThinking,
-      historyMaxImagesPerMessage: maxImages,
-    };
-  }, [messages]);
-
-  /**
-   * Compose-state slice the conflict gate consumes. Recomputed only when
-   * the underlying inputs change so downstream memos can short-circuit on
-   * reference equality. Pulled out so the live conflict memo and the
-   * submit-time shake gate can share one source of truth and never drift.
-   */
-  const composeCapabilityState = useMemo(() => {
-    const trimmed = query.trim();
-    const { found } = parseCommands(trimmed);
-    return {
-      hasScreenCommand: found.has('/screen'),
-      hasThinkCommand: found.has('/think'),
-      imageCount: attachedImages.length,
-    };
-  }, [query, attachedImages]);
-
-  const liveCapabilityConflictMessage = useMemo(() => {
-    const envMessage = getEnvironmentMessage(
-      ollamaReachable,
-      availableModels.length,
-      activeModel,
-    );
-    if (envMessage !== null) return envMessage;
-    return getCapabilityConflict(
-      activeModel,
-      activeModelCapabilities,
-      composeCapabilityState,
-      historyCapabilityState,
-    );
-  }, [
-    composeCapabilityState,
-    historyCapabilityState,
-    activeModel,
-    activeModelCapabilities,
-    ollamaReachable,
-    availableModels.length,
-  ]);
-
-  /**
-   * Submit-time shake gate. Shakes on compose-state conflicts (image
-   * attached to text-only model, /think on non-thinking, multi-image
-   * overflow) and on environment-state conflicts (Ollama unreachable,
-   * no models installed, no active model). History-only conflicts
-   * inform via the strip but never shake; the backend per-request
-   * filter strips incompatible content so submit keeps working, and
-   * shaking every turn until the user switches models would trap them
-   * in the conversation.
-   */
-  const hasBlockingConflict = useMemo(() => {
-    const envMessage = getEnvironmentMessage(
-      ollamaReachable,
-      availableModels.length,
-      activeModel,
-    );
-    if (envMessage !== null) return true;
-    return isComposeCapabilityConflict(
-      activeModelCapabilities,
-      composeCapabilityState,
-    );
-  }, [
-    ollamaReachable,
-    availableModels.length,
-    activeModel,
-    activeModelCapabilities,
-    composeCapabilityState,
-  ]);
 
   const handleSubmit = useCallback(() => {
     if (
@@ -1242,61 +1001,33 @@ function App() {
     )
       return;
 
-    // Clear any stale capture error from a previous attempt.
+    // Clear any stale capture error and capability conflicts from a previous attempt.
     setCaptureError(null);
+    setCapabilityConflicts([]);
 
     // Parse all valid commands from anywhere in the message.
     const trimmedQuery = query.trim();
     const { found, strippedMessage } = parseCommands(trimmedQuery);
     const hasScreen = found.has('/screen');
     const hasThink = found.has('/think');
-    const hasSearch = found.has('/search');
 
-    // Submit-time capability gate. Refuses messages whose attached content
-    // the active model cannot handle (images on a text-only model) and
-    // environment-state failures (Ollama unreachable, no model selected).
-    // History-only mismatches do NOT shake: the backend filter strips
-    // incompatible content from the per-request snapshot, so submit keeps
-    // working and the strip already explains what is happening. The gate
-    // is the only gate: input affordances stay live so the user can
-    // compose freely and recover via the model picker chip. When refused
-    // the ask bar shakes; the persistent capability strip already surfaces
-    // the reason so we do not duplicate it in a transient toast. Compose
-    // state is preserved so the user does not lose their typing.
-    if (hasBlockingConflict) {
-      setShakeAskBar(true);
-      return;
+    // Check for capability conflicts before dispatching.
+    const conflicts: string[] = [];
+    for (const cmd of found) {
+      const cmdConflicts = getCapabilityConflicts(
+        modelSelection.active,
+        modelSelection.capabilities,
+        cmd,
+      );
+      conflicts.push(...cmdConflicts.map((c) => c.message));
     }
-
-    // `/search` entry point AND sticky follow-ups. Once a search turn is in
-    // flight, subsequent submits without an explicit slash command continue
-    // to route through the backend search pipeline so the LLM can clarify,
-    // re-answer from context, or fire a fresh SearXNG query as needed.
-    // An explicit `/screen` command takes precedence over search continuation
-    // so users can always attach a screenshot mid-conversation.
-    if (hasSearch || (searchActive && !hasScreen && found.size === 0)) {
-      const searchQuery = strippedMessage.trim();
-      if (!searchQuery) return;
-      // Sanitize externally-sourced context before moving it into the user
-      // bubble so host-app control characters cannot leak into the UI.
-      // eslint-disable-next-line no-control-regex
-      const CONTROL_CHARS = /[\x00-\x08\x0b\x0c\x0e-\x1f]/g;
-      const sanitized = selectedContext
-        ?.replace(CONTROL_CHARS, '')
-        .slice(0, quote.maxContextLength);
-      const context = sanitized?.trim() ? sanitized : undefined;
-      // Pass the full typed query (with `/search`) as bubble display content so
-      // the user sees exactly what they typed; the backend receives only the
-      // stripped query without the trigger prefix.
-      const searchDisplay = hasSearch ? trimmedQuery : undefined;
-      setQuery('');
-      setSelectedContext(null);
-      /* v8 ignore next */
-      inputRef.current!.style.height = 'auto';
-      setSearchActive(true);
-      void askSearch(searchQuery, searchDisplay, context).then(({ final }) => {
-        if (final) setSearchActive(false);
-      });
+    if (hasVisionConflict(modelSelection.active, modelSelection.capabilities, attachedImages.length)) {
+      conflicts.push(
+        `${modelSelection.active} does not support image input. Attach images to a vision-capable model.`,
+      );
+    }
+    if (conflicts.length > 0) {
+      setCapabilityConflicts(conflicts);
       return;
     }
 
@@ -1317,9 +1048,54 @@ function App() {
     )
       return;
 
+    // Auto-detect computer-use intent. If the user is asking about screen content
+    // or requesting a vision analysis (but not explicitly using /screen or /do),
+    // automatically capture a screenshot and send it to the vision model.
+    if (!hasScreen && !found.has('/do') && !utilityTrigger) {
+      const intent = detectComputerUseIntent(strippedMessage);
+      if (intent === 'vision') {
+        // Treat as a /screen request with the user's message as the query.
+        void handleScreenSubmit(trimmedQuery, hasThink);
+        return;
+      }
+      if (intent === 'agent') {
+        const task = strippedMessage || selectedContext?.trim() || '';
+        if (task) {
+          setQuery('');
+          setSelectedContext(null);
+          setAttachedImages([]);
+          void agentMode.start(task);
+          return;
+        }
+      }
+    }
+
     if (hasScreen) {
       // Fire-and-forget: the async path handles cleanup and ask() invocation.
       void handleScreenSubmit(trimmedQuery, hasThink);
+      return;
+    }
+
+    if (found.has('/do')) {
+      const task = strippedMessage || selectedContext?.trim() || '';
+      if (!task) return;
+      setQuery('');
+      setSelectedContext(null);
+      setAttachedImages([]);
+      void agentMode.start(task);
+      return;
+    }
+
+    if (found.has('/search')) {
+      const searchQuery = strippedMessage || selectedContext?.trim() || '';
+      if (!searchQuery) return;
+      setQuery('');
+      setSelectedContext(null);
+      for (const img of attachedImages) {
+        URL.revokeObjectURL(img.blobUrl);
+      }
+      setAttachedImages([]);
+      void askSearch(searchQuery, trimmedQuery, selectedContext?.trim() || undefined);
       return;
     }
 
@@ -1410,7 +1186,7 @@ function App() {
       return;
     }
 
-    // Images are still processing - store the intent and wait. The effect
+    // Images are still processing — store the intent and wait. The effect
     // below will fire the actual ask() once every image has resolved.
     pendingSubmitRef.current = {
       query: trimmedQuery,
@@ -1438,15 +1214,14 @@ function App() {
     isGenerating,
     executeSubmit,
     handleScreenSubmit,
+    askSearch,
     selectedContext,
     setSelectedContext,
     attachedImages,
     setCaptureError,
-    ask,
-    askSearch,
-    searchActive,
-    quote.maxContextLength,
-    hasBlockingConflict,
+    setCapabilityConflicts,
+    modelSelection.active,
+    modelSelection.capabilities,
   ]);
 
   // When a pending submit exists and all images finish processing, fire it.
@@ -1458,7 +1233,7 @@ function App() {
   useEffect(() => {
     if (!pendingSubmitRef.current) return;
     if (attachedImages.length === 0) {
-      // All images failed - restore the user's query so their text isn't lost.
+      // All images failed — restore the user's query so their text isn't lost.
       const { query: savedQuery, context: savedContext } =
         pendingSubmitRef.current;
       pendingSubmitRef.current = null;
@@ -1480,7 +1255,7 @@ function App() {
     } = pendingSubmitRef.current;
     pendingSubmitRef.current = null;
     setIsSubmitPending(false);
-    // Clear the preview message - ask() will add the real one with file paths.
+    // Clear the preview message — ask() will add the real one with file paths.
     setPendingUserMessage(null);
 
     const images = attachedImages.map((img) => img.filePath as string);
@@ -1538,53 +1313,10 @@ function App() {
       requestAnimationFrame(() => inputRef.current?.focus());
       return;
     }
-    void cancel();
-    setSearchActive(false);
-    requestAnimationFrame(() => inputRef.current?.focus());
-  }, [isSubmitPending, cancel, setSearchActive, setSelectedContext]);
+    cancel();
+  }, [isSubmitPending, cancel, setSelectedContext]);
 
-  /**
-   * Persists the user's model choice via the backend and closes the picker panel.
-   * On rejection (e.g. the chosen model was uninstalled between render and click),
-   * triggers a refresh so the picker list and the active chip resync with the
-   * actual backend state instead of silently drifting.
-   */
-  const handleModelSelect = useCallback(
-    (model: string) => {
-      setIsModelPickerOpen(false);
-      void setActiveModel(model).catch(() => {
-        void refreshModels();
-      });
-    },
-    [setActiveModel, refreshModels],
-  );
-
-  /** Closes the model picker panel. Wired to Escape key inside the panel. */
-  const handleModelPickerClose = useCallback(() => {
-    setIsModelPickerOpen(false);
-  }, []);
-
-  /**
-   * Toggles the model picker panel. Closes history panel (mutually exclusive).
-   *
-   * On open we re-pull both the installed-model list and the per-model
-   * capability map so newly-pulled models (e.g. user ran `ollama pull
-   * deepseek-r1:1.5b` while Thuki was running) appear with their full
-   * capability label without needing an app restart. Backend
-   * `reconcile_capabilities` honors its cache for already-known slugs and
-   * only fetches `/api/show` for genuinely new entries, so this is cheap.
-   */
-  const handleModelPickerToggle = useCallback(() => {
-    setIsModelPickerOpen((prev) => {
-      const opening = !prev;
-      if (opening) {
-        void refreshModels();
-        void refreshModelCapabilities();
-      }
-      return opening;
-    });
-    setIsHistoryOpen(false);
-  }, [refreshModels, refreshModelCapabilities]);
+  /** Model configuration is now managed by useModelSelection hook. */
 
   /**
    * Synchronizes the React animation state with Tauri-driven overlay visibility
@@ -1593,6 +1325,8 @@ function App() {
   useEffect(() => {
     let unlistenVisibility: (() => void) | undefined;
     let unlistenOnboarding: (() => void) | undefined;
+    let unlistenMinibar: (() => void) | undefined;
+    let unlistenNotification: { unregister: () => Promise<void> } | undefined;
 
     const attachListeners = async () => {
       unlistenVisibility = await listen<OverlayVisibilityPayload>(
@@ -1616,7 +1350,31 @@ function App() {
           setOnboardingStage(payload.stage);
         },
       );
-      // Both listeners registered - safe to let Rust decide what to show on launch.
+      unlistenMinibar = await listen('thuki://minibar', () => {
+        setOverlayState((prev) => {
+          if (prev === 'visible' || prev === 'hiding') {
+            void invoke('enter_minibar_size');
+            return 'minibar';
+          }
+          return prev;
+        });
+      });
+      // Clicking a desktop notification restores the overlay from minibar/hidden.
+      try {
+        // Use Tauri notification plugin's onAction to detect notification clicks.
+        const { onAction } = await import('@tauri-apps/plugin-notification');
+        unlistenNotification = await onAction(() => {
+          if (overlayStateRef.current === 'minibar') {
+            void invoke('exit_minibar_size');
+            setOverlayState('visible');
+          } else if (overlayStateRef.current === 'hidden') {
+            void invoke('notify_overlay_hidden');
+          }
+        });
+      } catch {
+        // Notification action listener not supported in test env.
+      }
+      // Both listeners registered — safe to let Rust decide what to show on launch.
       await invoke('notify_frontend_ready');
     };
 
@@ -1624,12 +1382,14 @@ function App() {
     return () => {
       unlistenVisibility?.();
       unlistenOnboarding?.();
+      unlistenMinibar?.();
+      unlistenNotification?.unregister();
     };
   }, [replayEntranceAnimation, requestHideOverlay]);
 
   /**
    * Combined close handler shared by the keyboard shortcut (Esc/Ctrl+W)
-   * and the traffic light close/minimize buttons. Notifies the Rust
+   * and the window control close button. Notifies the Rust
    * backend and triggers the frontend exit animation sequence.
    */
   const handleCloseOverlay = useCallback(() => {
@@ -1637,17 +1397,53 @@ function App() {
     requestHideOverlay();
   }, [requestHideOverlay]);
 
-  /** Hide window on Escape or Ctrl+W. */
+  const handleMinimize = useCallback(() => {
+    // Instead of hiding, shrink to minibar mode (floating icon).
+    // The user can click the icon to restore the full overlay.
+    void invoke('enter_minibar_size');
+    setOverlayState('minibar');
+  }, []);
+
+  /** Copy the last assistant response to the clipboard. */
+  const handleCopyLastResponse = useCallback(() => {
+    const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
+    if (lastAssistant?.content) {
+      void navigator.clipboard.writeText(lastAssistant.content);
+    }
+  }, [messages]);
+
+  /** Global keyboard shortcuts: Escape/Ctrl+W hides overlay; Ctrl+N/S/H/Ctrl+Shift+C for actions. */
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (((e.metaKey || e.ctrlKey) && e.key === 'w') || e.key === 'Escape') {
         e.preventDefault();
         handleCloseOverlay();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'n' && !e.shiftKey) {
+        e.preventDefault();
+        handleNewConversation();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 's' && !e.shiftKey) {
+        e.preventDefault();
+        void handleSave();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'h' && !e.shiftKey) {
+        e.preventDefault();
+        handleHistoryToggle();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'C') {
+        e.preventDefault();
+        handleCopyLastResponse();
+        return;
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleCloseOverlay]);
+  }, [handleCloseOverlay, handleNewConversation, handleSave, handleHistoryToggle, handleCopyLastResponse]);
 
   /** Programmatic focus when the overlay becomes visible. */
   useEffect(() => {
@@ -1672,6 +1468,11 @@ function App() {
 
     return () => clearTimeout(timer);
   }, [overlayState]);
+
+  /** Prefetch available TTS voices on mount. */
+  useEffect(() => {
+    void fetchVoices();
+  }, [fetchVoices]);
 
   /**
    * Handles mousedown on any surface of the application window.
@@ -1753,14 +1554,14 @@ function App() {
             initial={{ opacity: 0, y: -20, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -16, scale: 0.98 }}
-            transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-            className="w-full px-4 py-2 overflow-visible"
+            transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+            className="w-full max-w-2xl px-4 py-2 overflow-visible"
           >
-            {/* Relative wrapper - serves as the positioning context for the
+            {/* Relative wrapper — serves as the positioning context for the
                 chat-mode history dropdown so it can sit outside the morphing
                 container's overflow-hidden boundary without being clipped. */}
             <div className="relative">
-              {/* Morphing Container - flex column ensures the input bar
+              {/* Morphing Container — flex column ensures the input bar
                   always sticks to the bottom without spring animation lag.
                   A CSS `transition: min-height` drives smooth window growth
                   when the chat-mode history dropdown is open; the existing
@@ -1772,15 +1573,21 @@ function App() {
                 style={{
                   transition:
                     'height 0.25s cubic-bezier(0.16, 1, 0.3, 1), min-height 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-                  maxHeight: `${config.window.maxChatHeight}px`,
                 }}
-                className={`morphing-container relative flex flex-col bg-surface-base backdrop-blur-2xl border border-surface-border overflow-hidden ${
-                  isChatMode
-                    ? `rounded-lg shadow-chat`
-                    : 'rounded-2xl shadow-bar'
-                }`}
+                className={`morphing-container relative flex flex-col bg-surface-base max-h-[600px] overflow-hidden`}
               >
-                {/* Chat Messages Area - morphs in when in chat mode. */}
+                {/* Model Picker — shown in chat mode above the conversation */}
+                {isChatMode && (
+                  <ModelPicker
+                    active={modelSelection.active}
+                    all={modelSelection.all}
+                    ollamaReachable={modelSelection.ollamaReachable}
+                    capabilities={modelSelection.capabilities}
+                    onSelect={modelSelection.selectModel}
+                  />
+                )}
+
+                {/* Chat Messages Area — morphs in when in chat mode */}
                 <AnimatePresence>
                   {isChatMode ? (
                     <ConversationView
@@ -1791,59 +1598,29 @@ function App() {
                       }
                       isGenerating={isGenerating || isSubmitPending}
                       onClose={handleCloseOverlay}
+                      onMinimize={handleMinimize}
                       onSave={handleSave}
                       isSaved={isSaved}
                       canSave={canSave}
                       onNewConversation={handleNewConversation}
                       onHistoryOpen={handleHistoryToggle}
                       onImagePreview={handleChatImagePreview}
-                      searchStage={searchStage}
-                      activeModel={activeModel}
-                      onModelPickerToggle={
-                        ollamaReachable ? handleModelPickerToggle : undefined
-                      }
-                      isModelPickerOpen={isModelPickerOpen}
+                      speakingMessageId={speakingMessageId}
+                      onSpeak={ttsSpeak}
+                      onStopSpeaking={ttsStop}
+                      privacyAcknowledged={privacyAcknowledged}
+                      onAcknowledgePrivacy={acknowledgePrivacy}
+                      ttsVoices={ttsVoices}
+                      selectedVoice={selectedVoice}
+                      onVoiceChange={setSelectedVoice}
                     />
                   ) : null}
                 </AnimatePresence>
 
-                {/* Ask-bar mode model picker drawer - above the input bar.
-                    In chat mode the trigger and drawer move to the header area above. */}
-                {!isChatMode && (
-                  <AnimatePresence>
-                    {isModelPickerOpen && ollamaReachable ? (
-                      <motion.div
-                        ref={modelPickerAskBarRef}
-                        key="model-picker-askbar"
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{
-                          height: {
-                            duration: 0.3,
-                            ease: [0.33, 1, 0.68, 1],
-                          },
-                          opacity: { duration: 0.2, delay: 0.08 },
-                        }}
-                        style={{ overflow: 'hidden' }}
-                        className="border-t border-surface-border"
-                      >
-                        <ModelPickerPanel
-                          models={availableModels}
-                          activeModel={activeModel}
-                          onSelect={handleModelSelect}
-                          onClose={handleModelPickerClose}
-                          capabilities={modelCapabilities}
-                        />
-                      </motion.div>
-                    ) : null}
-                  </AnimatePresence>
-                )}
-
-                {/* Ask-bar mode history panel - inline below the input bar.
+                {/* Ask-bar mode history panel — inline below the input bar.
                     The !isChatMode gate lives OUTSIDE AnimatePresence so that when
                     a conversation is loaded (isChatMode → true) the panel unmounts
-                    instantly - no exit animation runs alongside ConversationView
+                    instantly — no exit animation runs alongside ConversationView
                     mounting. Without this, AnimatePresence would hold the panel in
                     the DOM during its exit while ConversationView is also present,
                     causing two rapid ResizeObserver → setSize() calls (jitter).
@@ -1891,7 +1668,32 @@ function App() {
                   </div>
                 )}
 
-                {/* Input Bar - always pinned to the bottom */}
+                {/* Capability mismatch warnings — shown when the active model
+                    doesn't support a required capability (vision/thinking). */}
+                <CapabilityMismatchStrip
+                  activeModel={modelSelection.active}
+                  capabilities={modelSelection.capabilities}
+                  conflicts={capabilityConflicts}
+                />
+
+                {/* Agent mode indicator — shown when agent is active */}
+                <AgentIndicator
+                  isActive={agentMode.isActive}
+                  status={agentMode.status}
+                  lastAction={agentMode.lastAction}
+                  reasoning={agentMode.reasoning}
+                  pendingConfirmation={agentMode.pendingConfirmation}
+                  onStop={agentMode.stop}
+                  onConfirm={agentMode.confirmAction}
+                  onReject={agentMode.rejectAction}
+                />
+
+                {/* Tip Bar — shown in chat mode */}
+                {isChatMode && tipVisible && (
+                  <TipBar tip={tip} tipKey={tipKey} />
+                )}
+
+                {/* Input Bar — always pinned to the bottom */}
                 <AskBarView
                   query={query}
                   setQuery={setQuery}
@@ -1903,103 +1705,17 @@ function App() {
                   inputRef={inputRef}
                   selectedText={selectedContext ?? undefined}
                   onHistoryOpen={handleHistoryToggle}
+                  onSettingsOpen={() => { void invoke('open_settings_window'); }}
                   attachedImages={isSubmitPending ? [] : attachedImages}
                   onImagesAttached={handleImagesAttached}
                   onImageRemove={handleImageRemove}
                   onImagePreview={handleAskBarImagePreview}
                   onScreenshot={handleScreenshot}
                   isDragOver={isDragOver ?? undefined}
-                  onModelPickerToggle={
-                    ollamaReachable ? handleModelPickerToggle : undefined
-                  }
-                  isModelPickerOpen={isModelPickerOpen}
-                  capabilityConflictMessage={liveCapabilityConflictMessage}
-                  shake={shakeAskBar}
-                  maxImages={config.window.maxImages}
-                  onFirstKeystroke={() => void invoke('warm_up_model')}
                 />
-                {/* Footer slot.
-                 *
-                 * UpdateFooterBar takes priority and renders in BOTH modes
-                 * (ask bar + chat) so a pending update is visible no matter
-                 * what the user is doing. The TipBar stays scoped to
-                 * ask-bar mode: tips are noise mid-conversation, but an
-                 * update is signal worth showing.
-                 *
-                 * The mode gate lives OUTSIDE AnimatePresence (same reason
-                 * as the history panel above): prevents two simultaneous
-                 * ResizeObserver setSize() calls (jitter) when isChatMode
-                 * transitions.
-                 */}
-                {showUpdate ? (
-                  <AnimatePresence>
-                    <motion.div
-                      key="update-footer"
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-                      style={{ overflow: 'hidden' }}
-                    >
-                      <UpdateFooterBar
-                        version={updater.state.update!.version}
-                        notesUrl={updater.state.update!.notes_url}
-                        onInstall={() => void updater.install()}
-                        onLater={() => void updater.snoozeChat(24)}
-                      />
-                    </motion.div>
-                  </AnimatePresence>
-                ) : (
-                  !isChatMode && (
-                    <AnimatePresence>
-                      {isTipVisible && (
-                        <motion.div
-                          key="tip-bar"
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          transition={{
-                            duration: 0.25,
-                            ease: [0.16, 1, 0.3, 1],
-                          }}
-                          style={{ overflow: 'hidden' }}
-                        >
-                          <TipBar tip={activeTip} tipKey={tipKey} />
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  )
-                )}
               </div>
 
-              {/* Chat-mode model picker dropdown - floating card identical in style
-                  to the chat-history dropdown. Anchored absolute right-3 top-10
-                  so it appears just below the header pill trigger without pushing
-                  the conversation content. Click-outside closes it. */}
-              <AnimatePresence>
-                {isChatMode && isModelPickerOpen && ollamaReachable ? (
-                  <motion.div
-                    ref={modelPickerDropdownRef}
-                    key="model-picker-dropdown"
-                    initial={{ opacity: 0, y: -8, scale: 0.97 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -8, scale: 0.97 }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                    className="absolute right-3 top-10 z-50 w-56 rounded-xl border border-surface-border bg-surface-base shadow-chat overflow-hidden flex flex-col"
-                  >
-                    <ModelPickerPanel
-                      models={availableModels}
-                      activeModel={activeModel}
-                      onSelect={handleModelSelect}
-                      onClose={handleModelPickerClose}
-                      capabilities={modelCapabilities}
-                      compact
-                    />
-                  </motion.div>
-                ) : null}
-              </AnimatePresence>
-
-              {/* Chat-mode history dropdown - sibling of the morphing container so
+              {/* Chat-mode history dropdown — sibling of the morphing container so
                   it is never clipped by its overflow-hidden. Positioned absolutely
                   within this relative wrapper (same coordinate space as the
                   container). The container's minHeight animation grows the native
@@ -2013,7 +1729,7 @@ function App() {
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -8, scale: 0.97 }}
                     transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                    className="history-dropdown absolute right-3 top-10 z-50 w-56 rounded-xl border border-surface-border bg-surface-base shadow-chat overflow-hidden flex flex-col"
+                    className="history-dropdown absolute left-2 top-10 z-50 w-56 rounded-lg border border-surface-border bg-surface-base overflow-hidden flex flex-col"
                   >
                     <HistoryPanel
                       listConversations={listConversations}
@@ -2035,6 +1751,16 @@ function App() {
           </motion.div>
         ) : null}
       </AnimatePresence>
+      {overlayState === 'minibar' && (
+        <MinibarView
+          status={agentMode.isActive ? agentMode.status : null}
+          lastMessage={agentMode.reasoning}
+          onClick={() => {
+            void invoke('exit_minibar_size');
+            setOverlayState('visible');
+          }}
+        />
+      )}
       <ImagePreviewModal
         imageUrl={previewImageUrl}
         onClose={() => setPreviewImageUrl(null)}

@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
 use crate::commands::{
-    stream_ollama_chat, ChatMessage, ConversationHistory, OllamaChatParams, StreamChunk,
+    stream_ollama_chat_inner, ChatMessage, ConversationHistory, StreamChunk,
 };
 
 use super::chunker;
@@ -37,6 +37,7 @@ use super::llm::{
     JudgeSource, JudgeStage,
 };
 use super::reader;
+use super::recorder::PipelineRecorder;
 use super::rerank;
 use super::searxng;
 use super::types::{
@@ -44,7 +45,6 @@ use super::types::{
     SearchEvent, SearchMetadata, SearchResultPreview, SearchTraceCounts, SearchTraceKind,
     SearchTraceStatus, SearchTraceStep, SearchWarning, SearxResult, Sufficiency,
 };
-use crate::trace::BoundRecorder;
 
 /// Build the `JudgeSource` list fed to the sufficiency judge and the synthesis
 /// prompt from reranked chunks, deduplicated by source URL.
@@ -446,7 +446,7 @@ async fn run_streaming_branch(
     metadata: Option<SearchMetadata>,
     on_event: &impl Fn(SearchEvent),
     num_ctx: u32,
-    recorder: &Arc<BoundRecorder>,
+    recorder: &Arc<dyn PipelineRecorder>,
     stage: &str,
 ) {
     // Snapshot the request body before streaming starts so the trace can show
@@ -465,15 +465,13 @@ async fn run_streaming_branch(
     let token_count_for_callback = token_count.clone();
     let saw_done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let saw_done_for_callback = saw_done.clone();
-    let accumulated = stream_ollama_chat(
-        OllamaChatParams {
-            endpoint: endpoint.to_string(),
-            model: model.to_string(),
-            messages,
-            think: false,
-            keep_alive: None,
-            num_ctx,
-        },
+    let accumulated = stream_ollama_chat_inner(
+        endpoint,
+        model,
+        messages,
+        false,
+        None,
+        Some(num_ctx.into()),
         client,
         cancel_token,
         |chunk| match chunk {
@@ -534,13 +532,6 @@ pub(super) fn translate_chunk(chunk: StreamChunk) -> SearchEvent {
         StreamChunk::Done => SearchEvent::Done { metadata: None },
         StreamChunk::Cancelled => SearchEvent::Cancelled,
         StreamChunk::Error(e) => SearchEvent::Error { message: e.message },
-        // `TurnAccepted` is a top-level handshake emitted by `commands::
-        // ask_ollama` and `search::search_pipeline` themselves; the
-        // synthesis-pump path that feeds `translate_chunk` only ever
-        // receives the streaming variants above. Forward it as the
-        // matching pipeline event so the type stays exhaustive without
-        // smuggling the chunk into a Token.
-        StreamChunk::TurnAccepted => SearchEvent::TurnAccepted,
     }
 }
 
@@ -623,7 +614,7 @@ pub struct DefaultRouterJudge {
     today: String,
     router_timeout_secs: u64,
     num_ctx: u32,
-    recorder: Arc<BoundRecorder>,
+    recorder: Arc<dyn PipelineRecorder>,
 }
 
 impl DefaultRouterJudge {
@@ -652,7 +643,7 @@ impl DefaultRouterJudge {
         today: String,
         router_timeout_secs: u64,
         num_ctx: u32,
-        recorder: Arc<BoundRecorder>,
+        recorder: Arc<dyn PipelineRecorder>,
     ) -> Self {
         Self {
             endpoint,
@@ -705,7 +696,7 @@ pub struct DefaultJudge {
     cancel: CancellationToken,
     judge_timeout_secs: u64,
     num_ctx: u32,
-    recorder: Arc<BoundRecorder>,
+    recorder: Arc<dyn PipelineRecorder>,
 }
 
 impl DefaultJudge {
@@ -728,7 +719,7 @@ impl DefaultJudge {
         cancel: CancellationToken,
         judge_timeout_secs: u64,
         num_ctx: u32,
-        recorder: Arc<BoundRecorder>,
+        recorder: Arc<dyn PipelineRecorder>,
     ) -> Self {
         Self {
             endpoint,
@@ -811,9 +802,9 @@ struct SearchExecutionContext<'a> {
     on_event: &'a (dyn Fn(SearchEvent) + Sync),
     runtime_config: &'a config::SearchRuntimeConfig,
     num_ctx: u32,
-    /// Forensic per-turn recorder. Wraps a [`crate::trace::NoopRecorder`] in
+    /// Forensic per-turn recorder. [`super::recorder::NoopRecorder`] in
     /// production unless `runtime_config.trace_enabled` is set.
-    recorder: &'a Arc<BoundRecorder>,
+    recorder: &'a Arc<dyn PipelineRecorder>,
 }
 
 /// Per-turn values reused across extracted search stages.
@@ -863,7 +854,7 @@ fn judge_output_trace_json(verdict: &JudgeVerdict) -> serde_json::Value {
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[allow(clippy::too_many_arguments)]
 fn record_streaming_llm_call(
-    recorder: &Arc<BoundRecorder>,
+    recorder: &Arc<dyn PipelineRecorder>,
     stage: &str,
     endpoint: &str,
     request_body: serde_json::Value,
@@ -872,7 +863,7 @@ fn record_streaming_llm_call(
     started: std::time::Instant,
     saw_done: bool,
 ) {
-    recorder.record(crate::trace::RecorderEvent::StreamingLlmCall {
+    recorder.record(crate::search::recorder::RecorderEvent::StreamingLlmCall {
         stage: stage.to_string(),
         endpoint: endpoint.to_string(),
         request_body,
@@ -889,11 +880,11 @@ fn record_streaming_llm_call(
 
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn record_judge_verdict(
-    recorder: &Arc<BoundRecorder>,
+    recorder: &Arc<dyn PipelineRecorder>,
     stage: impl Into<String>,
     verdict: &JudgeVerdict,
 ) {
-    recorder.record(crate::trace::RecorderEvent::JudgeVerdict {
+    recorder.record(crate::search::recorder::RecorderEvent::JudgeVerdict {
         stage: stage.into(),
         raw: verdict.reasoning.clone(),
         normalized: judge_output_trace_json(verdict),
@@ -902,14 +893,14 @@ fn record_judge_verdict(
 
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn record_turn_start(
-    recorder: &Arc<BoundRecorder>,
+    recorder: &Arc<dyn PipelineRecorder>,
     turn_id: &str,
     user_query: &str,
     model: &str,
     runtime_config: &config::SearchRuntimeConfig,
     history: &ConversationHistory,
 ) {
-    recorder.record(crate::trace::RecorderEvent::TurnStart {
+    recorder.record(crate::search::recorder::RecorderEvent::TurnStart {
         turn_id: turn_id.to_string(),
         query: user_query.to_string(),
         model: model.to_string(),
@@ -920,11 +911,11 @@ fn record_turn_start(
 
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn record_turn_cancelled_before_router(
-    recorder: &Arc<BoundRecorder>,
+    recorder: &Arc<dyn PipelineRecorder>,
     turn_id: &str,
     turn_started: std::time::Instant,
 ) {
-    recorder.record(crate::trace::RecorderEvent::TurnEnd {
+    recorder.record(crate::search::recorder::RecorderEvent::TurnEnd {
         turn_id: turn_id.to_string(),
         final_action: "cancelled_before_router".to_string(),
         final_source_urls: Vec::new(),
@@ -935,12 +926,12 @@ fn record_turn_cancelled_before_router(
 
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn record_router_error_turn_end(
-    recorder: &Arc<BoundRecorder>,
+    recorder: &Arc<dyn PipelineRecorder>,
     turn_id: &str,
     turn_started: std::time::Instant,
     error: &SearchError,
 ) {
-    recorder.record(crate::trace::RecorderEvent::TurnEnd {
+    recorder.record(crate::search::recorder::RecorderEvent::TurnEnd {
         turn_id: turn_id.to_string(),
         final_action: format!("router_error:{error:?}"),
         final_source_urls: Vec::new(),
@@ -950,8 +941,8 @@ fn record_router_error_turn_end(
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-fn record_router_verdict(recorder: &Arc<BoundRecorder>, output: &RouterJudgeOutput) {
-    recorder.record(crate::trace::RecorderEvent::JudgeVerdict {
+fn record_router_verdict(recorder: &Arc<dyn PipelineRecorder>, output: &RouterJudgeOutput) {
+    recorder.record(crate::search::recorder::RecorderEvent::JudgeVerdict {
         stage: "router".into(),
         raw: format!("{:?}", output.action),
         normalized: router_output_trace_json(output),
@@ -960,13 +951,13 @@ fn record_router_verdict(recorder: &Arc<BoundRecorder>, output: &RouterJudgeOutp
 
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn record_turn_end(
-    recorder: &Arc<BoundRecorder>,
+    recorder: &Arc<dyn PipelineRecorder>,
     turn_id: &str,
     turn_started: std::time::Instant,
     result: &Result<(), SearchError>,
     action: &Action,
 ) {
-    recorder.record(crate::trace::RecorderEvent::TurnEnd {
+    recorder.record(crate::search::recorder::RecorderEvent::TurnEnd {
         turn_id: turn_id.to_string(),
         final_action: format_final_action(result, action),
         final_source_urls: Vec::new(),
@@ -1805,14 +1796,14 @@ pub async fn run_agentic(
     judge: &dyn JudgeCaller,
     runtime_config: &config::SearchRuntimeConfig,
     num_ctx: u32,
-    recorder: &Arc<BoundRecorder>,
+    recorder: &Arc<dyn PipelineRecorder>,
 ) -> Result<(), SearchError> {
     let trimmed = query.trim();
     if trimmed.is_empty() {
         return Err(SearchError::EmptyQuery);
     }
     let user_query = trimmed.to_string();
-    let turn_id = crate::trace::new_turn_id();
+    let turn_id = crate::search::recorder::new_turn_id();
     let turn_started = std::time::Instant::now();
     record_turn_start(
         recorder,
@@ -2741,17 +2732,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn translate_chunk_turn_accepted_maps_to_turn_accepted_event() {
-        // Defensive: the synthesis-pump path that feeds `translate_chunk`
-        // does not emit `TurnAccepted` in production, but the match must
-        // stay exhaustive without smuggling the chunk into a Token.
-        assert_eq!(
-            translate_chunk(StreamChunk::TurnAccepted),
-            SearchEvent::TurnAccepted,
-        );
-    }
-
     // ── snapshot_history ────────────────────────────────────────────────────
 
     #[test]
@@ -2853,9 +2833,7 @@ mod tests {
             None,
             &cb,
             DEFAULT_NUM_CTX,
-            &(Arc::new(crate::trace::BoundRecorder::noop_for(
-                crate::trace::ConversationId::new("test-conv-pipeline"),
-            ))),
+            &(Arc::new(crate::search::recorder::NoopRecorder) as Arc<dyn PipelineRecorder>),
             "test",
         )
         .await;
@@ -2869,9 +2847,7 @@ mod tests {
     #[test]
     fn default_router_judge_constructs_without_panic() {
         let cancel = CancellationToken::new();
-        let recorder: Arc<BoundRecorder> = Arc::new(BoundRecorder::noop_for(
-            crate::trace::ConversationId::new("test-conv-pipeline"),
-        ));
+        let recorder: Arc<dyn PipelineRecorder> = Arc::new(crate::search::recorder::NoopRecorder);
         let _judge = DefaultRouterJudge::new(
             "http://127.0.0.1:11434/api/chat".into(),
             "mistral".into(),
@@ -2887,9 +2863,7 @@ mod tests {
     #[test]
     fn default_judge_constructs_without_panic() {
         let cancel = CancellationToken::new();
-        let recorder: Arc<BoundRecorder> = Arc::new(BoundRecorder::noop_for(
-            crate::trace::ConversationId::new("test-conv-pipeline"),
-        ));
+        let recorder: Arc<dyn PipelineRecorder> = Arc::new(crate::search::recorder::NoopRecorder);
         let _judge = DefaultJudge::new(
             "http://127.0.0.1:11434/api/chat".into(),
             "mistral".into(),
@@ -3172,35 +3146,26 @@ mod tests {
 mod agentic_tests {
     use super::*;
     use crate::config::defaults::DEFAULT_NUM_CTX;
-    use crate::trace::ConversationId;
+    use crate::search::recorder::NoopRecorder;
 
-    /// Sentinel conversation id used by every pipeline test. Pipeline
-    /// tests do not assert on the conv-id field directly; they only
-    /// need a stable value so the BoundRecorder routes through.
-    const TEST_CONV_ID: &str = "test-conv-pipeline";
-
-    /// Constructs a noop recorder bound to the test conversation id for
-    /// tests that exercise `run_agentic` without asserting on trace
-    /// output. Recording assertions live in the trace module's own
-    /// test suite.
-    fn noop_recorder() -> Arc<BoundRecorder> {
-        Arc::new(BoundRecorder::noop_for(ConversationId::new(TEST_CONV_ID)))
+    /// Constructs a noop recorder wrapped as `Arc<dyn PipelineRecorder>` for
+    /// tests that exercise `run_agentic` without asserting on trace output.
+    /// Recording assertions live in the recorder module's own test suite.
+    fn noop_recorder() -> Arc<dyn PipelineRecorder> {
+        Arc::new(NoopRecorder)
     }
 
-    /// Constructs a mock recorder + an `Arc<BoundRecorder>` wrapping it
-    /// that the pipeline needs. Returns both so tests can pass the
-    /// bound recorder to `run_agentic` while still introspecting the
-    /// captured events through the concrete `MockRecorder`.
+    /// Constructs a mock recorder + the `Arc<dyn PipelineRecorder>` view that
+    /// the pipeline needs. Returns both so tests can pass the dyn-trait view
+    /// to `run_agentic` while still introspecting the captured events through
+    /// the concrete type.
     fn mock_recorder_pair() -> (
-        Arc<crate::trace::recorder::MockRecorder>,
-        Arc<BoundRecorder>,
+        Arc<crate::search::recorder::MockRecorder>,
+        Arc<dyn PipelineRecorder>,
     ) {
-        let mock = Arc::new(crate::trace::recorder::MockRecorder::new());
-        let bound = Arc::new(BoundRecorder::new(
-            mock.clone(),
-            ConversationId::new(TEST_CONV_ID),
-        ));
-        (mock, bound)
+        let mock = Arc::new(crate::search::recorder::MockRecorder::new());
+        let view: Arc<dyn PipelineRecorder> = mock.clone();
+        (mock, view)
     }
 
     // ── mock implementations ────────────────────────────────────────────────
@@ -3650,8 +3615,8 @@ mod agentic_tests {
         let (query, model) = snap
             .iter()
             .rev()
-            .find_map(|(_cid, e)| match e {
-                crate::trace::RecorderEvent::TurnStart { query, model, .. } => {
+            .find_map(|e| match e {
+                crate::search::recorder::RecorderEvent::TurnStart { query, model, .. } => {
                     Some((query.as_str(), model.as_str()))
                 }
                 _ => None,
@@ -3663,8 +3628,8 @@ mod agentic_tests {
         // Iterate forward so TurnStart hits `_ => None` before TurnEnd matches.
         let error = snap
             .iter()
-            .find_map(|(_cid, e)| match e {
-                crate::trace::RecorderEvent::TurnEnd { error, .. } => Some(error),
+            .find_map(|e| match e {
+                crate::search::recorder::RecorderEvent::TurnEnd { error, .. } => Some(error),
                 _ => None,
             })
             .expect("expected TurnEnd event in recorder snapshot");
@@ -3709,8 +3674,8 @@ mod agentic_tests {
         // ensuring both arms of the find_map closure are covered.
         let error = snap
             .iter()
-            .find_map(|(_cid, e)| match e {
-                crate::trace::RecorderEvent::TurnEnd { error, .. } => Some(error),
+            .find_map(|e| match e {
+                crate::search::recorder::RecorderEvent::TurnEnd { error, .. } => Some(error),
                 _ => None,
             })
             .expect("expected TurnEnd event in recorder snapshot");

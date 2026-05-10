@@ -1,8 +1,4 @@
-export type OllamaErrorKind =
-  | 'NotRunning'
-  | 'ModelNotFound'
-  | 'NoModelSelected'
-  | 'Other';
+export type OllamaErrorKind = 'NotRunning' | 'ModelNotFound' | 'Other';
 
 interface ErrorCardProps {
   kind: OllamaErrorKind;
@@ -12,9 +8,6 @@ interface ErrorCardProps {
 const barColors: Record<OllamaErrorKind, string> = {
   NotRunning: '#ef4444',
   ModelNotFound: '#f59e0b',
-  // Same accent as ModelNotFound: this is a configuration/setup nudge,
-  // not a daemon failure, so the warning hue (amber) is the right read.
-  NoModelSelected: '#f59e0b',
   Other: 'rgba(255,255,255,0.2)',
 };
 

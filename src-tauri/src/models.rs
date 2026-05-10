@@ -47,6 +47,12 @@ pub const MODEL_NOT_INSTALLED_ERR_PREFIX: &str = "Model is not installed in Olla
 #[derive(Default)]
 pub struct ActiveModelState(pub Mutex<Option<String>>);
 
+impl ActiveModelState {
+    pub fn new() -> Self {
+        Self(Mutex::new(None))
+    }
+}
+
 /// Top-level shape of the Ollama `/api/tags` response. Only the `models`
 /// array is consumed; all other fields are ignored.
 #[derive(Deserialize)]
@@ -341,8 +347,8 @@ pub async fn set_active_model(
 
 /// Result of probing the local Ollama daemon for setup readiness.
 ///
-/// Drives the Phase 3 onboarding gate that fires after the user grants
-/// macOS permissions but before the chat overlay is allowed to open.
+/// Drives the Phase 3 onboarding gate that fires after the user completes
+/// onboarding but before the chat overlay is allowed to open.
 /// Variants are emitted to the frontend in `snake_case` with an
 /// internally-tagged `state` discriminator so the React side can route
 /// on a single string field without inspecting payload shape.

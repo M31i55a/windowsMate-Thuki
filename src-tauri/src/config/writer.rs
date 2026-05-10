@@ -84,7 +84,7 @@ fn tmp_path_for(target: &Path) -> PathBuf {
 
 /// Writes `bytes` to `path` with mode 0600 (per-user read/write, nobody else),
 /// then fsyncs the file before returning. On non-Unix this falls back to
-/// default mode; Thuki is macOS-only so the permission bits always apply.
+/// default mode.
 fn write_and_sync(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let mut options = OpenOptions::new();
     options.write(true).create(true).truncate(true);

@@ -14,15 +14,17 @@
 use serde::{Deserialize, Serialize};
 
 use super::defaults::{
-    DEFAULT_DEBUG_TRACE_ENABLED, DEFAULT_JUDGE_TIMEOUT_S, DEFAULT_KEEP_WARM_INACTIVITY_MINUTES,
-    DEFAULT_MAX_CHAT_HEIGHT, DEFAULT_MAX_IMAGES, DEFAULT_MAX_ITERATIONS, DEFAULT_NUM_CTX,
-    DEFAULT_OLLAMA_URL, DEFAULT_OVERLAY_WIDTH, DEFAULT_PIPELINE_WALL_CLOCK_BUDGET_S,
-    DEFAULT_QUOTE_MAX_CONTEXT_LENGTH, DEFAULT_QUOTE_MAX_DISPLAY_CHARS,
-    DEFAULT_QUOTE_MAX_DISPLAY_LINES, DEFAULT_READER_BATCH_TIMEOUT_S,
-    DEFAULT_READER_PER_URL_TIMEOUT_S, DEFAULT_READER_URL, DEFAULT_ROUTER_TIMEOUT_S,
-    DEFAULT_SEARCH_TIMEOUT_S, DEFAULT_SEARXNG_MAX_RESULTS, DEFAULT_SEARXNG_URL,
-    DEFAULT_SYSTEM_PROMPT_BASE, DEFAULT_TOP_K_URLS, DEFAULT_UPDATER_AUTO_CHECK,
-    DEFAULT_UPDATER_CHECK_INTERVAL_HOURS, DEFAULT_UPDATER_MANIFEST_URL,
+    DEFAULT_DEBUG_SEARCH_TRACE_ENABLED, DEFAULT_JUDGE_TIMEOUT_S,
+    DEFAULT_KEEP_WARM_INACTIVITY_MINUTES, DEFAULT_MAX_CHAT_HEIGHT, DEFAULT_MAX_IMAGES,
+    DEFAULT_MAX_ITERATIONS, DEFAULT_NUM_CTX, DEFAULT_OLLAMA_URL, DEFAULT_OVERLAY_WIDTH,
+    DEFAULT_PIPELINE_WALL_CLOCK_BUDGET_S, DEFAULT_QUOTE_MAX_CONTEXT_LENGTH,
+    DEFAULT_QUOTE_MAX_DISPLAY_CHARS, DEFAULT_QUOTE_MAX_DISPLAY_LINES,
+    DEFAULT_READER_BATCH_TIMEOUT_S, DEFAULT_READER_PER_URL_TIMEOUT_S, DEFAULT_READER_URL,
+    DEFAULT_ROUTER_TIMEOUT_S, DEFAULT_SEARCH_TIMEOUT_S, DEFAULT_SEARXNG_MAX_RESULTS,
+    DEFAULT_SEARXNG_URL, DEFAULT_TOP_K_URLS,
+    DEFAULT_GATEWAY_ENABLED, DEFAULT_GATEWAY_PORT,
+    DEFAULT_TTS_VOICE, DEFAULT_TTS_RATE, DEFAULT_TTS_PITCH,
+    DEFAULT_AGENT_PROVIDER, DEFAULT_AGENT_MODEL, DEFAULT_AGENT_BASE_URL,
 };
 
 /// Static, user-tunable inference daemon configuration.
@@ -62,30 +64,23 @@ impl Default for InferenceSection {
     }
 }
 
-/// Prompt configuration. `system` holds the user-editable persona prompt; on
-/// first run it is seeded with the full built-in body so the file is the
-/// single source of truth. The slash-command appendix is composed at load
-/// time into `resolved_system` and is never written back to the file.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Prompt configuration. `system` holds only the user-editable base text.
+/// The slash-command appendix is composed at load time into `resolved_system`
+/// and is never written back to the file. `resolved_system` is computed, not
+/// serialized.
+///
+/// Note: `#[derive(Default)]` is correct here because both fields genuinely
+/// start empty: `system` empty means "use the built-in persona", and
+/// `resolved_system` is populated by the loader before any consumer reads it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(default)]
 pub struct PromptSection {
-    /// User-editable persona prompt. Seeded with the built-in body and
-    /// freely editable thereafter. If the user clears it, no persona is
-    /// sent (only the slash-command appendix).
+    /// User-editable persona prompt. Empty means "use the built-in default".
     pub system: String,
     /// Composed runtime value (base prompt plus slash-command appendix).
     /// Not serialized; computed by the loader.
     #[serde(skip)]
     pub resolved_system: String,
-}
-
-impl Default for PromptSection {
-    fn default() -> Self {
-        Self {
-            system: DEFAULT_SYSTEM_PROMPT_BASE.to_string(),
-            resolved_system: String::new(),
-        }
-    }
 }
 
 /// Overlay UI configuration. Holds window geometry and input attachment
@@ -204,58 +199,100 @@ impl Default for SearchSection {
 }
 
 /// Developer and power-user debugging knobs.
+///
+/// `search_trace_enabled` is exposed in the Settings GUI (Web tab, Diagnostics
+/// section) so users can toggle it without editing `config.toml`. Off in
+/// shipped builds by default.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct DebugSection {
-    /// Records every chat conversation and `/search` session to JSON-Lines
-    /// files under `app_data_dir/traces/{chat,search}/<conversation_id>.jsonl`.
-    /// Off by default; toggleable from Settings.
-    pub trace_enabled: bool,
+    /// When on, the `/search` pipeline writes a forensic JSON-Lines trace
+    /// file per turn under the app data traces directory.
+    /// Toggleable from the Settings panel. Off by default.
+    pub search_trace_enabled: bool,
 }
 
 impl Default for DebugSection {
     fn default() -> Self {
         Self {
-            trace_enabled: DEFAULT_DEBUG_TRACE_ENABLED,
+            search_trace_enabled: DEFAULT_DEBUG_SEARCH_TRACE_ENABLED,
         }
     }
 }
 
-/// Auto-update configuration. Determines whether and how often Thuki polls
-/// for new releases via the bundled tauri-plugin-updater.
+// ─── Windows-specific sections ─────────────────────────────────────────────
+
+/// Local gateway configuration.
+///
+/// ThukiWin can expose an OpenAI-compatible HTTP server that proxies requests
+/// to Ollama, translating between API formats. This is useful for tools that
+/// expect an OpenAI API endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
-pub struct UpdaterSection {
-    /// Poll for updates automatically at startup and every
-    /// `check_interval_hours` hours while running.
-    #[serde(default = "default_updater_auto_check")]
-    pub auto_check: bool,
-
-    /// Hours between automatic background checks. Bound to 1..168.
-    #[serde(default = "default_updater_check_interval_hours")]
-    pub check_interval_hours: u64,
-
-    /// URL to fetch the update manifest from.
-    #[serde(default = "default_updater_manifest_url")]
-    pub manifest_url: String,
+pub struct GatewaySection {
+    /// Whether the local OpenAI-compatible gateway server is enabled.
+    pub enabled: bool,
+    /// Port number for the gateway server. Valid range: 1024..=65535.
+    pub port: u16,
 }
 
-fn default_updater_auto_check() -> bool {
-    DEFAULT_UPDATER_AUTO_CHECK
-}
-fn default_updater_check_interval_hours() -> u64 {
-    DEFAULT_UPDATER_CHECK_INTERVAL_HOURS
-}
-fn default_updater_manifest_url() -> String {
-    DEFAULT_UPDATER_MANIFEST_URL.to_string()
-}
-
-impl Default for UpdaterSection {
+impl Default for GatewaySection {
     fn default() -> Self {
         Self {
-            auto_check: DEFAULT_UPDATER_AUTO_CHECK,
-            check_interval_hours: DEFAULT_UPDATER_CHECK_INTERVAL_HOURS,
-            manifest_url: DEFAULT_UPDATER_MANIFEST_URL.to_string(),
+            enabled: DEFAULT_GATEWAY_ENABLED,
+            port: DEFAULT_GATEWAY_PORT,
+        }
+    }
+}
+
+/// Text-to-speech configuration.
+///
+/// ThukiWin uses Microsoft Edge Read Aloud service for TTS. Voice names follow
+/// the Microsoft naming convention (e.g. "tr-TR-EmelNeural", "en-US-AvaNeural").
+/// Rate and pitch are percentage offsets from default: -100 to +100.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct TtsSection {
+    /// Voice identifier for TTS synthesis.
+    pub voice: String,
+    /// Speech rate offset from default (-100 to +100).
+    pub rate: i32,
+    /// Pitch offset from default (-100 to +100).
+    pub pitch: i32,
+}
+
+impl Default for TtsSection {
+    fn default() -> Self {
+        Self {
+            voice: DEFAULT_TTS_VOICE.to_string(),
+            rate: DEFAULT_TTS_RATE,
+            pitch: DEFAULT_TTS_PITCH,
+        }
+    }
+}
+
+/// Agent mode (computer control) configuration.
+///
+/// The active provider determines which AI backend drives the agent loop.
+/// API keys are NOT stored in TOML (they go in the SQLite app_config table
+/// or the OS keychain) because TOML is a plain-text file unsuitable for secrets.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct AgentSection {
+    /// Provider for agent mode: "ollama", "openai", or "anthropic".
+    pub provider: String,
+    /// Model name for the agent provider (e.g. "gpt-4o", "claude-3.5-sonnet").
+    pub model: String,
+    /// Base URL for the agent provider API. Empty means use the provider's default.
+    pub base_url: String,
+}
+
+impl Default for AgentSection {
+    fn default() -> Self {
+        Self {
+            provider: DEFAULT_AGENT_PROVIDER.to_string(),
+            model: DEFAULT_AGENT_MODEL.to_string(),
+            base_url: DEFAULT_AGENT_BASE_URL.to_string(),
         }
     }
 }
@@ -273,6 +310,7 @@ pub struct AppConfig {
     pub quote: QuoteSection,
     pub search: SearchSection,
     pub debug: DebugSection,
-    #[serde(default)]
-    pub updater: UpdaterSection,
+    pub gateway: GatewaySection,
+    pub tts: TtsSection,
+    pub agent: AgentSection,
 }

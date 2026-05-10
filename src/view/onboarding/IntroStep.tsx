@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { invoke } from '@tauri-apps/api/core';
-import thukiLogo from '../../../src-tauri/icons/128x128.png';
+import thukiLogo from '/128x128.png';
 
 interface Props {
   onComplete: () => void;

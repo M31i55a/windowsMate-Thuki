@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useEffect } from 'react';
 
 type SwitchConfirmationVariant = 'switch' | 'new';
 
@@ -11,8 +11,8 @@ interface SwitchConfirmationProps {
   onCancel: () => void;
   /**
    * Controls the title and button labels.
-   * - `"switch"` (default) - "Switch conversations?" / "Save & Switch" / "Just Switch"
-   * - `"new"` - "New conversation?" / "Save & Start New" / "Start New"
+   * - `"switch"` (default) — "Switch conversations?" / "Save & Switch" / "Just Switch"
+   * - `"new"` — "New conversation?" / "Save & Start New" / "Start New"
    */
   variant?: SwitchConfirmationVariant;
 }
@@ -38,8 +38,8 @@ const VARIANT_TEXT: Record<
  * needs to decide what to do with the current conversation before proceeding.
  *
  * Two variants:
- * - **switch** - loading an existing conversation.
- * - **new** - starting a fresh conversation via the "+" button.
+ * - **switch** — loading an existing conversation.
+ * - **new** — starting a fresh conversation via the "+" button.
  *
  * A **Cancel** action returns the user to the previous view.
  */
@@ -50,6 +50,25 @@ export const SwitchConfirmation = memo(function SwitchConfirmation({
   variant = 'switch',
 }: SwitchConfirmationProps) {
   const text = VARIANT_TEXT[variant];
+
+  // Keyboard shortcuts: Enter = save & proceed, Escape = cancel.
+  // Uses capture phase + stopPropagation so global shortcuts in App.tsx
+  // don't fire while this confirmation is visible.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        e.preventDefault();
+        onCancel();
+      } else if (e.key === 'Enter') {
+        e.stopPropagation();
+        e.preventDefault();
+        onSaveAndSwitch();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => document.removeEventListener('keydown', handleKeyDown, { capture: true });
+  }, [onCancel, onSaveAndSwitch]);
 
   return (
     <div className="px-3 py-3 flex flex-col gap-2.5">

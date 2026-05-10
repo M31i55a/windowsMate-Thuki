@@ -2,19 +2,17 @@ import { motion, AnimatePresence } from 'framer-motion';
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatQuotedText } from '../utils/formatQuote';
-import { useConfig } from '../contexts/ConfigContext';
+import { quote } from '../config';
 import { ImageThumbnails } from '../components/ImageThumbnails';
 import { CommandSuggestion } from '../components/CommandSuggestion';
-import { ModelPicker } from '../components/ModelPicker';
 import { Tooltip } from '../components/Tooltip';
-import { CapabilityMismatchStrip } from '../components/CapabilityMismatchStrip';
 import type { AttachedImage } from '../types/image';
 import { MAX_IMAGE_SIZE_BYTES } from '../types/image';
 import { COMMANDS } from '../config/commands';
 
 /**
- * Hoisted static SVG - prevents re-allocation on every render cycle.
- * @see Vercel React Best Practices §6.3 - Hoist Static JSX Elements
+ * Hoisted static SVG — prevents re-allocation on every render cycle.
+ * @see Vercel React Best Practices §6.3 — Hoist Static JSX Elements
  */
 const ARROW_UP_ICON = (
   <svg
@@ -36,7 +34,7 @@ const ARROW_UP_ICON = (
 );
 
 /**
- * Hoisted static SVG - square stop icon displayed during active generation.
+ * Hoisted static SVG — square stop icon displayed during active generation.
  */
 const STOP_ICON = (
   <svg
@@ -94,11 +92,11 @@ const BORDER_TRACE_RING = (
   </svg>
 );
 
-/** Hoisted static history (clock) icon - prevents re-allocation on every render. */
+/** Hoisted static history (clock) icon — prevents re-allocation on every render. */
 const HISTORY_ICON = (
   <svg
-    width="16"
-    height="16"
+    width="14"
+    height="14"
     viewBox="0 0 24 24"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
@@ -122,7 +120,7 @@ const HISTORY_ICON = (
   </svg>
 );
 
-/** Hoisted static camera icon - triggers screenshot capture. */
+/** Hoisted static camera icon — triggers screenshot capture. */
 const CAMERA_ICON = (
   <svg
     width="14"
@@ -142,84 +140,9 @@ const CAMERA_ICON = (
   </svg>
 );
 
-/** Props for the AskBarView component. */
-interface AskBarViewProps {
-  /** The current user input text. */
-  query: string;
-  /** State setter to update the user input text. */
-  setQuery: React.Dispatch<React.SetStateAction<string>>;
-  /** True if the chat history is expanded or currently generating. */
-  isChatMode: boolean;
-  /** True if the AI is actively generating a response. */
-  isGenerating: boolean;
-  /** True while waiting for images to finish processing before submitting. */
-  isSubmitPending?: boolean;
-  /** Submit handler fired when the user commits their message. */
-  onSubmit: () => void;
-  /** Cancel handler fired when the user stops an active generation. */
-  onCancel: () => void;
-  /** Ref to the textarea input element for focus management. */
-  inputRef: React.RefObject<HTMLTextAreaElement | null>;
-  /** Selected text from the host app captured at activation time, if any. */
-  selectedText?: string;
-  /**
-   * Called when the compact history icon is clicked in ask-bar mode.
-   * Omit to hide the history icon entirely.
-   */
-  onHistoryOpen?: () => void;
-  /** Currently attached images (may still be processing in the background). */
-  attachedImages: AttachedImage[];
-  /** Called when the user pastes image files. */
-  onImagesAttached: (files: File[]) => void;
-  /** Called when the user removes an attached image by ID. */
-  onImageRemove: (id: string) => void;
-  /** Called when the user clicks a thumbnail to preview it. */
-  onImagePreview: (id: string) => void;
-  /** Called when the user clicks the screenshot capture button. */
-  onScreenshot: () => void;
-  /**
-   * Drag state passed down from the root window handler.
-   * "normal" = violet ring; "max" = red ring + label; undefined = no ring.
-   */
-  isDragOver?: 'normal' | 'max';
-  /**
-   * Called when the user clicks the model picker trigger. App.tsx owns the
-   * open/close state and renders the ModelPickerPanel as an inline drawer.
-   * In compose mode App.tsx gates this on `ollamaReachable`, so its presence
-   * doubles as the signal that Ollama is reachable: the chip stays visible
-   * even when there is no active model or zero installed models so the user
-   * can recover by opening the picker.
-   */
-  onModelPickerToggle?: () => void;
-  /** Whether the model picker panel is currently open (drives aria-expanded). */
-  isModelPickerOpen?: boolean;
-  /**
-   * Capability mismatch message to render between the attachments row and
-   * the input. `null` (or undefined) renders nothing. The host computes
-   * this string via `getCapabilityConflict` and passes it down.
-   */
-  capabilityConflictMessage?: string | null;
-  /**
-   * When true, the input row plays a brief horizontal shake animation.
-   * The host pulses this true / false to signal a refused submit.
-   */
-  shake?: boolean;
-  /** Maximum number of manually attached images. Sourced from AppConfig. */
-  maxImages: number;
-  /**
-   * Called once when the textarea transitions from empty to non-empty.
-   * Used to trigger model pre-warming so Ollama is ready before the user
-   * submits their first message.
-   */
-  onFirstKeystroke?: () => void;
-}
-
 /**
  * Renders text with command triggers highlighted in violet for the mirror div.
- * Only the first occurrence of each command is highlighted; duplicates render
- * as plain text. Word-boundary aware: `/searching` does not match `/search`.
- *
- * Exported for direct unit testing.
+ * Only the first occurrence of each command is highlighted; duplicates render plain.
  */
 export function renderHighlightedText(text: string): React.ReactNode {
   const parts: React.ReactNode[] = [];
@@ -267,10 +190,61 @@ export function renderHighlightedText(text: string): React.ReactNode {
 }
 
 /**
+ * Maximum number of manually attached images per message. The backend allows
+ * one additional image from /screen capture, for a total of 4 per message
+ * (MAX_IMAGES_PER_MESSAGE in images.rs).
+ */
+export const MAX_IMAGES = 3;
+
+/** Props for the AskBarView component. */
+interface AskBarViewProps {
+  /** The current user input text. */
+  query: string;
+  /** State setter to update the user input text. */
+  setQuery: React.Dispatch<React.SetStateAction<string>>;
+  /** True if the chat history is expanded or currently generating. */
+  isChatMode: boolean;
+  /** True if the AI is actively generating a response. */
+  isGenerating: boolean;
+  /** True while waiting for images to finish processing before submitting. */
+  isSubmitPending?: boolean;
+  /** Submit handler fired when the user commits their message. */
+  onSubmit: () => void;
+  /** Cancel handler fired when the user stops an active generation. */
+  onCancel: () => void;
+  /** Ref to the textarea input element for focus management. */
+  inputRef: React.RefObject<HTMLTextAreaElement | null>;
+  /** Selected text from the host app captured at activation time, if any. */
+  selectedText?: string;
+  /**
+   * Called when the compact history icon is clicked in ask-bar mode.
+   * Omit to hide the history icon entirely.
+   */
+  onHistoryOpen?: () => void;
+  /** Called when the settings gear icon is clicked. */
+  onSettingsOpen?: () => void;
+  /** Currently attached images (may still be processing in the background). */
+  attachedImages: AttachedImage[];
+  /** Called when the user pastes image files. */
+  onImagesAttached: (files: File[]) => void;
+  /** Called when the user removes an attached image by ID. */
+  onImageRemove: (id: string) => void;
+  /** Called when the user clicks a thumbnail to preview it. */
+  onImagePreview: (id: string) => void;
+  /** Called when the user clicks the screenshot capture button. */
+  onScreenshot: () => void;
+  /**
+   * Drag state passed down from the root window handler.
+   * "normal" = violet ring; "max" = red ring + label; undefined = no ring.
+   */
+  isDragOver?: 'normal' | 'max';
+}
+
+/**
  * Renders the persistent bottom input bar of the application.
  *
  * Window dragging is handled by the application root container via event
- * bubbling - mousedown events from this component propagate up naturally.
+ * bubbling — mousedown events from this component propagate up naturally.
  */
 export function AskBarView({
   query,
@@ -283,40 +257,22 @@ export function AskBarView({
   inputRef,
   selectedText,
   onHistoryOpen,
+  onSettingsOpen,
   attachedImages,
   onImagesAttached,
   onImageRemove,
   onImagePreview,
   onScreenshot,
   isDragOver,
-  onModelPickerToggle,
-  isModelPickerOpen,
-  capabilityConflictMessage,
-  shake = false,
-  maxImages,
-  onFirstKeystroke,
 }: AskBarViewProps) {
-  /** Quote display limits resolved from the managed AppConfig. */
-  const quote = useConfig().quote;
-
   /** Ref to the mirror div behind the textarea for command highlighting. */
   const mirrorRef = useRef<HTMLDivElement>(null);
 
-  /** Syncs the mirror div scroll position with the textarea so the colored
-   *  spans stay aligned with the caret on long inputs. */
-  const handleTextareaScroll = useCallback(() => {
-    /* v8 ignore start -- both refs are always set by React when this fires */
-    if (!mirrorRef.current || !inputRef.current) return;
-    /* v8 ignore stop */
-    mirrorRef.current.scrollTop = inputRef.current.scrollTop;
-    mirrorRef.current.scrollLeft = inputRef.current.scrollLeft;
-  }, [inputRef]);
-
-  /** True when the UI should be locked - either generating or waiting for images. */
+  /** True when the UI should be locked — either generating or waiting for images. */
   const isBusy = isGenerating || isSubmitPending;
   const canSubmit =
     (query.trim().length > 0 || attachedImages.length > 0) && !isBusy;
-  const isAtMaxImages = attachedImages.length >= maxImages;
+  const isAtMaxImages = attachedImages.length >= MAX_IMAGES;
 
   /** True briefly after a paste attempt is rejected because max images reached. */
   const [pasteMaxError, setPasteMaxError] = useState(false);
@@ -326,19 +282,6 @@ export function AskBarView({
     const timer = setTimeout(() => setPasteMaxError(false), 2000);
     return () => clearTimeout(timer);
   }, [pasteMaxError]);
-
-  // ─── Model picker availability gate ───────────────────────────────────────
-
-  /**
-   * Prerequisites for rendering the chip trigger in the input bar.
-   * Hidden in chat mode (the pill trigger moves to the WindowControls
-   * header). The chip renders whenever the picker callback is wired up
-   * regardless of model state: with no active model it surfaces the
-   * "Pick a model" recovery affordance, and the caller is expected to
-   * omit `onModelPickerToggle` (Ollama unreachable) when the chip should
-   * stay hidden.
-   */
-  const modelPickerAvailable = Boolean(!isChatMode && onModelPickerToggle);
 
   // ─── Command suggestion state ─────────────────────────────────────────────
 
@@ -446,15 +389,12 @@ export function AskBarView({
       // Any keystroke clears the dismissed state so the popover can reopen
       // if the user types a new "/" prefix after having pressed Escape.
       setDismissedQuery('');
-      if (query.length === 0 && newValue.length > 0) {
-        onFirstKeystroke?.();
-      }
       setQuery(newValue);
       const el = e.target;
       el.style.height = 'auto'; // Reset to auto to trigger height recalculation
       el.style.height = `${Math.min(el.scrollHeight, 144)}px`;
     },
-    [setQuery, query, onFirstKeystroke],
+    [setQuery],
   );
 
   /**
@@ -533,13 +473,21 @@ export function AskBarView({
     ],
   );
 
-  /** Handles clipboard paste - extracts image items from clipboardData. */
+  /** Syncs the mirror div scroll position with the textarea. */
+  const handleTextareaScroll = useCallback(() => {
+    /* v8 ignore start -- both refs are always set by React when this fires */
+    if (!mirrorRef.current || !inputRef.current) return;
+    /* v8 ignore stop */
+    mirrorRef.current.scrollTop = inputRef.current.scrollTop;
+  }, [inputRef]);
+
+  /** Handles clipboard paste — extracts image items from clipboardData. */
   const handlePaste = useCallback(
     (e: React.ClipboardEvent) => {
       const items = e.clipboardData?.items;
       if (!items || isBusy) return;
 
-      const remaining = maxImages - attachedImages.length;
+      const remaining = MAX_IMAGES - attachedImages.length;
       if (remaining <= 0) {
         const hasImageItem = Array.from(items).some((item) =>
           item.type.startsWith('image/'),
@@ -562,7 +510,7 @@ export function AskBarView({
       e.preventDefault();
       onImagesAttached(imageFiles);
     },
-    [isBusy, attachedImages.length, maxImages, onImagesAttached],
+    [isBusy, attachedImages.length, onImagesAttached],
   );
 
   // Suppress the paste error label while a drag is active so the drag-state
@@ -592,9 +540,7 @@ export function AskBarView({
         </div>
       )}
       {showMaxLabel && (
-        <p className="px-4 pt-2 pb-0 text-xs text-red-400">
-          Max {maxImages} images
-        </p>
+        <p className="px-4 pt-2 pb-0 text-xs text-red-400">Max 3 images</p>
       )}
       {attachedImages.length > 0 && (
         <div className="px-4 pt-2 pb-0">
@@ -609,9 +555,6 @@ export function AskBarView({
             size={56}
           />
         </div>
-      )}
-      {capabilityConflictMessage && (
-        <CapabilityMismatchStrip message={capabilityConflictMessage} />
       )}
       {/* Command suggestion renders above the input row in the normal DOM
           flow. Being inside the morphing container means the ResizeObserver
@@ -639,20 +582,13 @@ export function AskBarView({
           </motion.div>
         )}
       </AnimatePresence>
-      <motion.div
-        className="relative"
-        data-testid="ask-bar-row"
-        animate={shake ? { x: [0, -4, 4, -3, 3, 0] } : { x: 0 }}
-        transition={
-          shake ? { duration: 0.5, ease: 'easeInOut' } : { duration: 0 }
-        }
-      >
+      <div className="relative">
         <div className="flex items-center w-full px-3 py-2.5 gap-2">
           <img
             src="/thuki-logo.png"
             alt="Thuki"
             className={`shrink-0 transition-all duration-300 ease-out ${
-              isChatMode ? 'w-6 h-6 rounded-lg' : 'w-10 h-10 rounded-xl'
+              isChatMode ? 'w-6 h-6 rounded-lg' : 'w-10 h-10 rounded-lg'
             }`}
             draggable={false}
           />
@@ -664,23 +600,33 @@ export function AskBarView({
               type="button"
               onClick={onHistoryOpen}
               aria-label="Open history"
-              className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-primary hover:bg-primary/10 transition-colors duration-150 cursor-pointer outline-none"
+              className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-text-primary hover:bg-white/8 transition-colors duration-150 cursor-pointer outline-none"
             >
               {HISTORY_ICON}
             </button>
           )}
 
+          {/* Settings gear icon. */}
+          {onSettingsOpen && (
+            <button
+              type="button"
+              onClick={onSettingsOpen}
+              aria-label="Open settings"
+              className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-text-primary hover:bg-white/8 transition-colors duration-150 cursor-pointer outline-none"
+            >
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path fillRule="evenodd" clipRule="evenodd" d="M8.257 3.099A1 1 0 019.26 2h1.48a1 1 0 01.997.917l.082.827a6.073 6.073 0 011.387.8l.696-.442a1 1 0 011.244.206l1.045 1.045a1 1 0 01.206 1.244l-.442.696a6.073 6.073 0 01.8 1.387l.827.082A1 1 0 0118 9.26v1.48a1 1 0 01-.917.997l-.827.082a6.073 6.073 0 01-.8 1.387l.442.696a1 1 0 01-.206 1.244l-1.045 1.045a1 1 0 01-1.244.206l-.696-.442a6.073 6.073 0 01-1.387.8l-.082.827A1 1 0 0110.74 18H9.26a1 1 0 01-.997-.917l-.082-.827a6.073 6.073 0 01-1.387-.8l-.696.442a1 1 0 01-1.244-.206l-1.045-1.045a1 1 0 01-.206-1.244l.442-.696a6.073 6.073 0 01-.8-1.387l-.827-.082A1 1 0 012 10.74V9.26a1 1 0 01.917-.997l.827-.082a6.073 6.073 0 01.8-1.387l-.442-.696a1 1 0 01.206-1.244l1.045-1.045a1 1 0 011.244-.206l.696.442a6.073 6.073 0 011.387-.8l.082-.827zM10 13a3 3 0 100-6 3 3 0 000 6z" fill="currentColor" />
+              </svg>
+            </button>
+          )}
+
           <div className="relative flex-1 min-w-0">
-            {/* Mirror div: renders the same text with highlighted slash
-                commands. Sits behind the transparent textarea so colored
-                spans show through. Metrics (font, size, padding, leading,
-                wrap) MUST mirror the textarea exactly so the caret never
-                drifts off the rendered glyphs. */}
+            {/* Mirror div: renders the same text with highlighted commands.
+                Sits behind the transparent textarea so colored spans show through. */}
             <div
               ref={mirrorRef}
               aria-hidden="true"
-              data-testid="askbar-mirror"
-              className="askbar-mirror absolute inset-0 pointer-events-none bg-transparent text-text-primary text-sm py-2 px-1 leading-5 whitespace-pre-wrap break-words overflow-hidden"
+              className="absolute inset-0 pointer-events-none bg-transparent text-text-primary text-sm py-2 px-1 leading-relaxed whitespace-pre-wrap break-words overflow-hidden"
             >
               {renderHighlightedText(query)}
             </div>
@@ -695,13 +641,13 @@ export function AskBarView({
               autoFocus
               rows={1}
               placeholder={isChatMode ? 'Reply...' : 'Ask Thuki anything...'}
-              className="askbar-textarea relative w-full bg-transparent border-none outline-none text-transparent text-sm placeholder:text-text-secondary py-2 px-1 disabled:opacity-50 resize-none leading-5"
+              className="relative w-full bg-transparent border-none outline-none text-transparent text-sm placeholder:text-text-secondary py-2 px-1 disabled:opacity-50 resize-none leading-relaxed"
               style={{ caretColor: 'var(--color-text-primary)' }}
             />
           </div>
 
           {isAtMaxImages ? (
-            <Tooltip label={`Maximum ${maxImages} images attached`}>
+            <Tooltip label="Maximum 3 images attached">
               <button
                 type="button"
                 onClick={onScreenshot}
@@ -719,20 +665,10 @@ export function AskBarView({
                 onClick={onScreenshot}
                 disabled={isBusy}
                 aria-label="Take screenshot"
-                className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-primary hover:bg-primary/10 transition-colors duration-150 disabled:opacity-40 disabled:cursor-default cursor-pointer"
+                className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-text-primary hover:bg-white/8 transition-colors duration-150 disabled:opacity-40 disabled:cursor-default cursor-pointer"
               >
                 {CAMERA_ICON}
               </button>
-            </Tooltip>
-          )}
-
-          {modelPickerAvailable && onModelPickerToggle && (
-            <Tooltip label="Choose model">
-              <ModelPicker
-                onClick={onModelPickerToggle}
-                disabled={isBusy}
-                isOpen={isModelPickerOpen ?? false}
-              />
             </Tooltip>
           )}
 
@@ -742,7 +678,7 @@ export function AskBarView({
             disabled={!canSubmit && !isBusy}
             whileHover={canSubmit || isBusy ? { scale: 1.08 } : undefined}
             whileTap={canSubmit || isBusy ? { scale: 0.92 } : undefined}
-            className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-colors duration-200 ${
+            className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 ${
               isBusy
                 ? 'stop-btn-ring bg-red-500/10 text-red-400 cursor-pointer'
                 : canSubmit
@@ -761,7 +697,7 @@ export function AskBarView({
             )}
           </motion.button>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }

@@ -2,50 +2,46 @@
 @source "../node_modules/streamdown/dist";
 @import 'streamdown/styles.css';
 
-/* Source Serif 4 reading face for AI prose. Chrome stays Inter. */
-@import '@fontsource/source-serif-4/400.css';
-@import '@fontsource/source-serif-4/400-italic.css';
-
 @theme {
   --font-sans:
-    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
-    Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    'Segoe UI Variable', 'Segoe UI', 'Inter', -apple-system, BlinkMacSystemFont,
+    Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
 
-  /* Brand palette - single source of truth for all color decisions */
+  /* Brand palette — single source of truth for all color decisions */
   --color-primary: #ff8d5c;
   --color-secondary: #bc5c0b;
   --color-tertiary: #e69c05;
-  --color-neutral: #1a1a1c;
+  --color-neutral: #1c1c1c;
 
   /* Surface tokens derived from the palette */
-  --color-surface-base: rgba(22, 18, 15, 0.98);
-  --color-surface-elevated: rgba(38, 30, 24, 0.6);
-  --color-surface-border: rgba(255, 141, 92, 0.12);
+  --color-surface-base: #202020;
+  --color-surface-elevated: #2c2c2c;
+  --color-surface-border: rgba(255, 255, 255, 0.08);
 
   /* Text tokens */
   --color-text-primary: #f0f0f2;
   --color-text-secondary: #8a8a8e;
 
   /* Streamdown theme tokens (shadcn/ui convention) */
-  --color-muted: rgba(42, 42, 46, 0.6);
+  --color-muted: #2c2c2c;
   --color-muted-foreground: #8a8a8e;
-  --color-border: rgba(255, 141, 92, 0.1);
-  --color-sidebar: rgba(28, 28, 32, 0.95);
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-sidebar: #202020;
   --color-foreground: #f0f0f2;
 
-  /* Elevation - input bar mode (compact floating effect, Spotlight-inspired) */
+  /* Elevation — input bar mode (compact floating effect, Fluent-inspired) */
   --shadow-bar:
-    0 6px 20px -6px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 141, 92, 0.12);
+    0 2px 4px -1px rgba(0, 0, 0, 0.2), 0 4px 12px -4px rgba(0, 0, 0, 0.3);
 
-  /* Elevation - chat window mode (layered depth without excessive spread) */
+  /* Elevation — chat window mode (layered depth, Fluent-inspired) */
   --shadow-chat:
-    0 4px 14px -3px rgba(0, 0, 0, 0.5), 0 1px 4px -1px rgba(0, 0, 0, 0.3),
-    0 0 0 1px rgba(255, 141, 92, 0.12);
+    0 1px 2px rgba(0, 0, 0, 0.14), 0 4px 8px -2px rgba(0, 0, 0, 0.18),
+    0 8px 24px -8px rgba(0, 0, 0, 0.22);
 }
 
 html,
 body {
-  background-color: transparent;
+  background-color: #202020;
   color: var(--color-text-primary);
   margin: 0;
   padding: 0;
@@ -56,33 +52,7 @@ body {
 /* ─── Morphing Container ─── */
 .morphing-container {
   will-change: transform;
-  transition:
-    box-shadow 0.5s cubic-bezier(0.12, 0.8, 0.2, 1.18),
-    border-radius 0.5s cubic-bezier(0.12, 0.8, 0.2, 1.18);
-  background-image: radial-gradient(
-    ellipse 70% 40% at 50% 0%,
-    rgba(255, 141, 92, 0.08) 0%,
-    transparent 65%
-  );
-  border-top-color: rgba(255, 141, 92, 0.2);
-}
-
-/* Subtle glowing line at the very top edge - matches approved onboarding style */
-.morphing-container::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 15%;
-  right: 15%;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 141, 92, 0.35),
-    transparent
-  );
-  pointer-events: none;
-  z-index: 1;
+  transition: box-shadow 0.3s cubic-bezier(0.33, 1, 0.68, 1);
 }
 
 /* ─── Chat Bubble Styles ─── */
@@ -92,35 +62,24 @@ body {
 }
 
 /**
- * User bubble - warm gradient from primary brand color to a deeper amber.
+ * User bubble — warm gradient from primary brand color to a deeper amber.
  * Subtle inner glow at the top for depth perception.
  */
 .chat-bubble-user {
   background: linear-gradient(135deg, #ff8d5c 0%, #e06b30 100%);
-  box-shadow:
-    0 2px 12px -2px rgba(255, 141, 92, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  box-shadow: none;
 }
 
-/**
- * AI bubble - frosted glass surface with a subtle border for depth.
- * Harmonizes with the warm ambient dark overlay backdrop.
- */
 .chat-bubble-ai {
-  background: rgba(36, 30, 26, 0.95);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-top-color: rgba(255, 141, 92, 0.1);
-  box-shadow:
-    0 2px 8px -2px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  background: #2c2c2c;
+  border: none;
+  box-shadow: none;
 }
 
 /* ─── Stop Button Border Trace ───
  * SVG border-trace using pathLength="100" so all dash math is in clean
  * percentages. Three layered strokes staggered via animation-delay (NOT
- * initial dashoffset - that causes different travel distances and speed
+ * initial dashoffset — that causes different travel distances and speed
  * drift). All three share the same keyframe and duration so they move
  * in lockstep, with the delay creating a fixed spatial offset.
  */
@@ -141,20 +100,20 @@ body {
   stroke-width: 1.5;
   stroke-linecap: round;
 }
-/* Head - bright leading segment, furthest along the path */
+/* Head — bright leading segment, furthest along the path */
 .stop-trace-head {
   stroke-dasharray: 15 85;
   animation: trace-border 2s linear infinite;
   animation-delay: -0.56s;
 }
-/* Mid - dimmer segment trailing the head */
+/* Mid — dimmer segment trailing the head */
 .stop-trace-mid {
   stroke-dasharray: 12 88;
   opacity: 0.4;
   animation: trace-border 2s linear infinite;
   animation-delay: -0.3s;
 }
-/* Tail - faintest segment, furthest behind */
+/* Tail — faintest segment, furthest behind */
 .stop-trace-tail {
   stroke-dasharray: 10 90;
   opacity: 0.12;
@@ -172,33 +131,6 @@ body {
 /* ─── Chat Messages Scrollable Area ─── */
 .chat-messages-scroll {
   scrollbar-gutter: stable;
-}
-
-/* ─── AskBar Textarea ───
- * Hide the native scrollbar so the textarea's wrapping width matches the
- * highlight mirror div behind it. Without this, once content exceeds the
- * 144px cap and the textarea begins scrolling, the system scrollbar
- * consumes a few pixels of content width, causing wrapped lines in the
- * textarea and the mirror to diverge — the caret then floats above the
- * visible text. The hook syncs scrollTop so caret-follow still works.
- */
-.askbar-textarea {
-  scrollbar-width: none;
-}
-.askbar-textarea::-webkit-scrollbar {
-  display: none;
-}
-
-/* AI prose reading face: serif body, warm cream, looser leading. Scoped to
- * .markdown-body so UI chrome (labels, buttons, search trace) stays Inter.
- * User bubble renders via renderUserContent, not MarkdownRenderer.
- */
-.markdown-body {
-  font-family: 'Source Serif 4', Charter, 'Iowan Old Style', Georgia, serif;
-  color: #efe3cc;
-  font-size: 15.5px;
-  line-height: 1.65;
-  letter-spacing: 0.3px;
 }
 
 /* ─── Markdown Body: Prose Defaults ───
@@ -230,7 +162,7 @@ body {
   padding-left: 0.25rem;
 }
 
-/* ─── Code Block - Premium Brand Style ───
+/* ─── Code Block — Premium Brand Style ───
  * Streamdown's utility classes (border-border, bg-background, bg-sidebar) don't
  * resolve against our custom theme. Override every layer explicitly.
  *
@@ -243,11 +175,11 @@ body {
  * Plain CSS outside @layer overrides Tailwind utility classes in @layer utilities.
  */
 [data-streamdown='code-block'] {
-  position: relative; /* anchors the absolutely-repositioned actions wrapper */
-  background: rgba(18, 18, 22, 0.95);
-  border-color: rgba(255, 141, 92, 0.22);
+  position: relative;
+  background: #12121a;
+  border-color: rgba(255, 141, 92, 0.15);
   box-shadow:
-    0 0 0 1px rgba(255, 141, 92, 0.06),
+    0 0 0 1px rgba(255, 141, 92, 0.04),
     0 4px 16px -4px rgba(0, 0, 0, 0.5);
 }
 
@@ -272,11 +204,11 @@ body {
 [data-streamdown='code-block-body'] {
   background: transparent;
   border: none;
-  border-top: 1px solid rgba(255, 141, 92, 0.08);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 /* ─── Code Block Copy Button ───
- * Strip Streamdown's floating pill chrome - transparent ghost icon only.
+ * Strip Streamdown's floating pill chrome — transparent ghost icon only.
  * Plain CSS outside @layer overrides Tailwind utility classes in @layer utilities.
  */
 [data-streamdown='code-block-actions'] {
@@ -300,165 +232,32 @@ body {
   background: transparent;
 }
 
-/* ─── /search: inline citation anchors + pill footer ───
- * Hover linking is driven by `data-active-citation="N"` on the bubble root.
- * When set, EVERY element with matching `data-citation="N"` (whether it's an
- * inline <a> in the answer or a <button> pill in the footer) highlights.
- * We never change padding/width/font-size on hover - only color/bg - so the
- * text reflow is zero.
- */
-.citation-link {
-  color: rgba(232, 131, 90, 0.75);
-  text-decoration: none;
+/* ─── Windows Title Bar Buttons ─── */
+.win-title-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 32px;
+  color: rgba(255, 255, 255, 0.7);
+  transition: background-color 0.1s ease;
   cursor: pointer;
-  font-size: 0.85em;
-  vertical-align: baseline;
-  padding: 0 1px;
-  border-radius: 3px;
-  transition:
-    color 150ms ease,
-    background-color 150ms ease;
+  border: none;
+  background: transparent;
+  padding: 0;
 }
-.citation-link:hover {
-  color: #e8835a;
-  background-color: rgba(232, 131, 90, 0.14);
+.win-title-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.9);
 }
-.search-bubble[data-active-citation='1'] .citation-link[data-citation='1'],
-.search-bubble[data-active-citation='2'] .citation-link[data-citation='2'],
-.search-bubble[data-active-citation='3'] .citation-link[data-citation='3'],
-.search-bubble[data-active-citation='4'] .citation-link[data-citation='4'],
-.search-bubble[data-active-citation='5'] .citation-link[data-citation='5'],
-.search-bubble[data-active-citation='6'] .citation-link[data-citation='6'],
-.search-bubble[data-active-citation='7'] .citation-link[data-citation='7'],
-.search-bubble[data-active-citation='8'] .citation-link[data-citation='8'],
-.search-bubble[data-active-citation='9'] .citation-link[data-citation='9'],
-.search-bubble[data-active-citation='10'] .citation-link[data-citation='10'] {
-  color: #e8835a;
-  background-color: rgba(232, 131, 90, 0.18);
+.win-title-btn-close:hover {
+  background: #c42b1c;
+  color: white;
 }
-
-/* Letter-avatar sources trigger. Flat, no border - the stacked avatars
- * and count text do the heavy visual lifting. */
-.sources-trigger > span:last-child {
-  transition: color 150ms ease;
+.win-title-btn:active {
+  background: rgba(255, 255, 255, 0.04);
 }
-.sources-trigger:hover > span:last-child {
-  color: rgba(255, 255, 255, 0.85);
-}
-
-/* /search: minimal source list rows
- * Plain numbered list. Title + domain brighten on hover OR when the matching
- * citation anchor elsewhere is hovered. No layout-shifting transforms.
- */
-.source-row {
-  transition: opacity 150ms ease;
-}
-.source-row-title,
-.source-row-domain,
-.source-row-num {
-  transition: color 150ms ease;
-}
-.source-row:hover .source-row-title,
-.search-bubble[data-active-citation='1']
-  .source-row[data-citation='1']
-  .source-row-title,
-.search-bubble[data-active-citation='2']
-  .source-row[data-citation='2']
-  .source-row-title,
-.search-bubble[data-active-citation='3']
-  .source-row[data-citation='3']
-  .source-row-title,
-.search-bubble[data-active-citation='4']
-  .source-row[data-citation='4']
-  .source-row-title,
-.search-bubble[data-active-citation='5']
-  .source-row[data-citation='5']
-  .source-row-title,
-.search-bubble[data-active-citation='6']
-  .source-row[data-citation='6']
-  .source-row-title,
-.search-bubble[data-active-citation='7']
-  .source-row[data-citation='7']
-  .source-row-title,
-.search-bubble[data-active-citation='8']
-  .source-row[data-citation='8']
-  .source-row-title,
-.search-bubble[data-active-citation='9']
-  .source-row[data-citation='9']
-  .source-row-title,
-.search-bubble[data-active-citation='10']
-  .source-row[data-citation='10']
-  .source-row-title {
-  color: rgba(255, 255, 255, 0.95);
-}
-.source-row:hover .source-row-domain,
-.search-bubble[data-active-citation='1']
-  .source-row[data-citation='1']
-  .source-row-domain,
-.search-bubble[data-active-citation='2']
-  .source-row[data-citation='2']
-  .source-row-domain,
-.search-bubble[data-active-citation='3']
-  .source-row[data-citation='3']
-  .source-row-domain,
-.search-bubble[data-active-citation='4']
-  .source-row[data-citation='4']
-  .source-row-domain,
-.search-bubble[data-active-citation='5']
-  .source-row[data-citation='5']
-  .source-row-domain,
-.search-bubble[data-active-citation='6']
-  .source-row[data-citation='6']
-  .source-row-domain,
-.search-bubble[data-active-citation='7']
-  .source-row[data-citation='7']
-  .source-row-domain,
-.search-bubble[data-active-citation='8']
-  .source-row[data-citation='8']
-  .source-row-domain,
-.search-bubble[data-active-citation='9']
-  .source-row[data-citation='9']
-  .source-row-domain,
-.search-bubble[data-active-citation='10']
-  .source-row[data-citation='10']
-  .source-row-domain {
-  color: rgba(255, 255, 255, 0.55);
-}
-
-/* ─── /search stage indicator: shimmer sweep on label text ───
- * A lighter band glides left-to-right across the muted label text while the
- * pipeline is running. Uses background-clip: text so the gradient is painted
- * through the glyphs themselves - no wrapper element required.
- * Option B pattern: wide gradient (4x element width) with dim plateaus ensures
- * text remains visible at pause positions.
- */
-.search-stage-label,
-.thinking-label-shimmer,
-.loading-label {
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.28) 0%,
-    rgba(255, 255, 255, 0.28) 40%,
-    rgba(255, 255, 255, 0.55) 50%,
-    rgba(255, 255, 255, 0.28) 60%,
-    rgba(255, 255, 255, 0.28) 100%
-  );
-  background-size: 400% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
-  animation: search-stage-shimmer 3s ease-in-out infinite;
-}
-
-@keyframes search-stage-shimmer {
-  0% {
-    background-position: 100% 0;
-  }
-  75% {
-    background-position: 0% 0;
-  }
-  100% {
-    background-position: 0% 0;
-  }
+.win-title-btn-close:active {
+  background: #b22a1a;
+  color: white;
 }

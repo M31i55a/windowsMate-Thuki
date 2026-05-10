@@ -1,23 +1,15 @@
 /**
- * AI tab.
- *
- * Holds the local Ollama endpoint, keep-warm controls, and the custom system
- * prompt. The active model picker lives in the main app overlay (see
- * ModelPickerPanel) since model selection is runtime UI state owned by
- * ActiveModelState in the backend, not a TOML-persisted field. The
- * Window/Quote knobs live in the Display tab.
+ * AI tab - Ollama endpoint, keep-warm controls, and system prompt.
  */
 
 import { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
-import { Section, TextField, Textarea, Toggle } from '../components';
+import { Section, TextField, Textarea } from '../components';
 import { SaveField } from '../components/SaveField';
 import { useDebouncedSave } from '../hooks/useDebouncedSave';
 import { configHelp } from '../configHelpers';
-import { DrawCheckIcon } from '../../components/DrawCheckIcon';
-import { Tooltip } from '../../components/Tooltip';
 import styles from '../../styles/settings.module.css';
 import type { RawAppConfig } from '../types';
 
@@ -27,15 +19,8 @@ interface ModelTabProps {
   onSaved: (next: RawAppConfig) => void;
 }
 
-/// Built-in prompt body is ~17 KB; cap roomy so users can edit without truncation.
-const PROMPT_MAX_CHARS = 32000;
-/// Default textarea height for the system prompt: large enough to show a
-/// meaningful slice of the seeded built-in body without forcing the user to
-/// drag the resize grip on first open.
-const PROMPT_TEXTAREA_ROWS = 16;
+const PROMPT_MAX_CHARS = 8000;
 const EJECT_RESET_MS = 2500;
-/// Approximate tokens per chat turn used for the "~N turns of context" hint.
-/// 400 tokens ≈ a typical user question + assistant reply pair on this app.
 const TOKENS_PER_TURN_ESTIMATE = 400;
 
 const KEEP_WARM_TOOLTIP =
@@ -44,11 +29,8 @@ const KEEP_WARM_TOOLTIP =
   'Unload now releases it immediately. ' +
   'If set to 0, Ollama unloads models after its default 5-minute timeout.';
 
-// Log-scale context window slider: slider pos [0..1000] ↔ token count.
-// Scale: value = CTX_MIN * (CTX_MAX / CTX_MIN)^(pos/1000)
-// With CTX_MAX/CTX_MIN = 512 (= 2^9), each 1/9 of the slider doubles the value.
 const CTX_MIN = 2048;
-const CTX_MAX = 1_048_576; // 1M
+const CTX_MAX = 1_048_576;
 const CTX_LOG_RATIO = Math.log(CTX_MAX / CTX_MIN);
 
 function ctxToPos(v: number): number {
@@ -56,7 +38,6 @@ function ctxToPos(v: number): number {
 }
 
 function posToCtx(pos: number): number {
-  // Snap to nearest 1 KiB boundary (standard Ollama increment).
   return (
     Math.round((CTX_MIN * Math.pow(CTX_MAX / CTX_MIN, pos / 1000)) / 1024) *
     1024
@@ -64,39 +45,22 @@ function posToCtx(pos: number): number {
 }
 
 const CTX_TICKS = [
-  '2K',
-  '4K',
-  '8K',
-  '16K',
-  '32K',
-  '64K',
-  '128K',
-  '256K',
-  '512K',
-  '1M',
+  '2K', '4K', '8K', '16K', '32K', '64K', '128K', '256K', '512K', '1M',
 ];
 
 export function ModelTab({ config, resyncToken, onSaved }: ModelTabProps) {
   const [inactivityMin, setInactivityMin] = useState(
     config.inference.keep_warm_inactivity_minutes,
   );
-  const [rawMin, setRawMin] = useState(
-    String(config.inference.keep_warm_inactivity_minutes),
-  );
-  const minFocusedRef = useRef(false);
   const [ejecting, setEjecting] = useState(false);
   const [loadedModel, setLoadedModel] = useState<string | null>(null);
 
-  // Context window: committed value drives the debounced save; local slider
-  // pos updates live on drag without committing on every pixel.
   const [numCtx, setNumCtx] = useState(config.inference.num_ctx);
   const [ctxPos, setCtxPos] = useState(() =>
     ctxToPos(config.inference.num_ctx),
   );
   const [ctxChip, setCtxChip] = useState(String(config.inference.num_ctx));
   const ctxDraggingRef = useRef(false);
-
-  const [devOpen, setDevOpen] = useState(false);
 
   useEffect(() => {
     let unlistenLoaded: (() => void) | null = null;
@@ -150,11 +114,8 @@ export function ModelTab({ config, resyncToken, onSaved }: ModelTabProps) {
 
   if (prevTokenRef.current !== resyncToken) {
     prevTokenRef.current = resyncToken;
-    if (!minFocusedRef.current) {
-      setInactivityMin(config.inference.keep_warm_inactivity_minutes);
-      setRawMin(String(config.inference.keep_warm_inactivity_minutes));
-      resetMin(config.inference.keep_warm_inactivity_minutes);
-    }
+    setInactivityMin(config.inference.keep_warm_inactivity_minutes);
+    resetMin(config.inference.keep_warm_inactivity_minutes);
     const nextCtx = config.inference.num_ctx;
     setNumCtx(nextCtx);
     setCtxPos(ctxToPos(nextCtx));
@@ -204,49 +165,26 @@ export function ModelTab({ config, resyncToken, onSaved }: ModelTabProps) {
       </Section>
 
       <Section heading="Keep Warm">
-        {/* Row 1: label + [?] on left | Release after [N] min on right */}
         <div className={styles.keepWarmRow1}>
           <div className={styles.keepWarmLabelLine}>
             <span className={styles.keepWarmLabel}>
               Keep active model in VRAM
             </span>
-            <Tooltip label={KEEP_WARM_TOOLTIP} multiline>
-              <button
-                type="button"
-                className={styles.infoBtn}
-                aria-label="About Keep active model in VRAM"
-              >
-                ?
-              </button>
-            </Tooltip>
+            <span className={styles.infoBtn} title={KEEP_WARM_TOOLTIP}>?</span>
           </div>
           <div className={styles.keepWarmTimerGroup}>
             <span className={styles.keepWarmBarFieldLabel}>Release after</span>
             <input
               type="number"
               className={styles.keepWarmNumberInput}
-              value={rawMin}
+              value={inactivityMin}
               min={-1}
               max={1440}
               aria-label="Release after N minutes"
-              onFocus={() => {
-                minFocusedRef.current = true;
-              }}
               onChange={(e) => {
                 const n = parseInt(e.target.value, 10);
-                if (Number.isNaN(n)) {
-                  setRawMin(e.target.value);
-                } else {
-                  const clamped = Math.max(-1, Math.min(1440, n));
-                  setRawMin(String(clamped));
-                  setInactivityMin(clamped);
-                }
-              }}
-              onBlur={() => {
-                minFocusedRef.current = false;
-                if (Number.isNaN(parseInt(rawMin, 10))) {
-                  setRawMin('0');
-                  setInactivityMin(0);
+                if (!Number.isNaN(n)) {
+                  setInactivityMin(Math.max(-1, Math.min(1440, n)));
                 }
               }}
             />
@@ -254,26 +192,18 @@ export function ModelTab({ config, resyncToken, onSaved }: ModelTabProps) {
           </div>
         </div>
 
-        {/* Row 2: slug status on left | Unload now on right */}
         <div className={styles.keepWarmStatusRow}>
           <div className={styles.keepWarmStatusLeft}>
             {loadedModel !== null ? (
               <div className={styles.keepWarmVramSubtitle}>
-                <span
-                  className={styles.keepWarmVramDot}
-                  data-testid="vram-status-dot"
-                  aria-hidden="true"
-                />
-                <span className={styles.keepWarmVramModelName}>
-                  {loadedModel}
-                </span>
-                <span>&nbsp;· in VRAM</span>
+                <span className={styles.keepWarmVramDot} data-testid="vram-status-dot" aria-hidden="true" />
+                <span className={styles.keepWarmVramModelName}>{loadedModel}</span>
+                <span>&nbsp;in VRAM</span>
               </div>
             ) : (
               <span className={styles.keepWarmNoModel}>No model loaded</span>
             )}
           </div>
-
           <button
             type="button"
             className={styles.keepWarmEjectPill}
@@ -282,20 +212,6 @@ export function ModelTab({ config, resyncToken, onSaved }: ModelTabProps) {
             data-ejecting={ejecting}
             onClick={handleEject}
           >
-            {ejecting ? (
-              <DrawCheckIcon />
-            ) : (
-              <svg
-                viewBox="0 0 16 16"
-                width="11"
-                height="11"
-                fill="currentColor"
-                aria-hidden="true"
-              >
-                <polygon points="8,2 14,11 2,11" />
-                <rect x="2" y="12.5" width="12" height="2" rx="1" />
-              </svg>
-            )}
             Unload now
           </button>
         </div>
@@ -303,7 +219,6 @@ export function ModelTab({ config, resyncToken, onSaved }: ModelTabProps) {
 
       <Section heading="Context Window">
         <div className={styles.ctxBlock}>
-          {/* Label row: "Context window" left + editable token chip right */}
           <div className={styles.ctxTopRow}>
             <span className={styles.ctxLabel}>Context window</span>
             <div className={styles.ctxChipGroup}>
@@ -318,8 +233,6 @@ export function ModelTab({ config, resyncToken, onSaved }: ModelTabProps) {
                 onBlur={() => {
                   const n = parseInt(ctxChip, 10);
                   if (!Number.isNaN(n) && n >= CTX_MIN) {
-                    // Clamp upper bound so the UI mirrors the backend
-                    // BOUNDS_NUM_CTX cap and the slider stays in sync.
                     commitCtx(Math.min(n, CTX_MAX));
                   } else {
                     setCtxChip(String(numCtx));
@@ -333,7 +246,6 @@ export function ModelTab({ config, resyncToken, onSaved }: ModelTabProps) {
             </div>
           </div>
 
-          {/* Log-scale slider — fill percentage tracked via CSS custom property */}
           <input
             type="range"
             className={styles.ctxSlider}
@@ -380,29 +292,15 @@ export function ModelTab({ config, resyncToken, onSaved }: ModelTabProps) {
 
           <div className={styles.ctxHelper}>
             ~{ctxTurns.toLocaleString()} turns of context
-            {' · '}
+            {' - '}
             Ollama caps to your model&apos;s trained maximum.
           </div>
 
           <div className={styles.ctxVramNote}>
-            <span className={styles.ctxVramIcon} aria-hidden="true">
-              ⚠
-            </span>
+            <span className={styles.ctxVramIcon} aria-hidden="true">!</span>
             <span>
               The KV cache scales linearly with context length, so doubling the
-              context roughly doubles its memory footprint (model weights stay
-              the same). Benchmark with your hardware before pushing it high.{' '}
-              <button
-                type="button"
-                className={styles.ctxVramLink}
-                onClick={() => {
-                  void invoke('open_url', {
-                    url: 'https://github.com/quiet-node/thuki/blob/main/docs/tuning-context-window.md#the-5-minute-benchmark-recipe',
-                  });
-                }}
-              >
-                Learn how to tune Context Window in 5 minute ↗
-              </button>
+              context roughly doubles its memory footprint.
             </span>
           </div>
         </div>
@@ -423,10 +321,9 @@ export function ModelTab({ config, resyncToken, onSaved }: ModelTabProps) {
               <Textarea
                 value={value}
                 onChange={setValue}
-                placeholder="Persona prompt…"
+                placeholder="Use built-in secretary persona..."
                 maxLength={PROMPT_MAX_CHARS}
                 ariaLabel="System prompt"
-                rows={PROMPT_TEXTAREA_ROWS}
               />
               <div className={styles.charCounter}>
                 {value.length} / {PROMPT_MAX_CHARS}
@@ -435,56 +332,6 @@ export function ModelTab({ config, resyncToken, onSaved }: ModelTabProps) {
           )}
         />
       </Section>
-
-      <div className={styles.devSection}>
-        <button
-          type="button"
-          className={styles.devTrigger}
-          aria-expanded={devOpen}
-          aria-controls="dev-diagnostics"
-          onClick={() => setDevOpen((o) => !o)}
-        >
-          <span className={styles.devTriggerLabel}>Diagnostics</span>
-          <span className={styles.devTag}>DEV</span>
-          <svg
-            className={`${styles.devChevron} ${devOpen ? styles.devChevronOpen : ''}`}
-            viewBox="0 0 10 10"
-            fill="currentColor"
-            aria-hidden
-          >
-            <path
-              d="M3 2l4 3-4 3"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              fill="none"
-            />
-          </svg>
-        </button>
-        {devOpen && (
-          <div id="dev-diagnostics">
-            <SaveField
-              section="debug"
-              fieldKey="trace_enabled"
-              label="Trace recording"
-              helper={configHelp('debug', 'trace_enabled')}
-              initialValue={config.debug.trace_enabled}
-              resyncToken={resyncToken}
-              onSaved={onSaved}
-              tooltipPlacement="top"
-              rightAlign
-              render={(value, setValue) => (
-                <Toggle
-                  checked={value}
-                  onChange={setValue}
-                  ariaLabel="Enable trace recording"
-                />
-              )}
-            />
-          </div>
-        )}
-      </div>
     </>
   );
 }

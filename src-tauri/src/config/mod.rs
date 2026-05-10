@@ -1,9 +1,9 @@
 //! Application configuration module.
 //!
-//! This module is the single source of truth for Thuki's runtime configuration.
+//! This module is the single source of truth for ThukiWin's runtime configuration.
 //! Every subsystem reads resolved values from a Tauri-managed `AppConfig`
 //! state. Compiled defaults live in `defaults`; the on-disk file at
-//! `~/Library/Application Support/com.quietnode.thuki/config.toml` overlays
+//! `%APPDATA%/com.quietnode.thuki/config.toml` overlays
 //! user customizations on top.
 //!
 //! ## Public surface
@@ -13,9 +13,6 @@
 //! - [`load_from_path`] - pure, test-friendly variant that takes a `Path`.
 //! - [`atomic_write`] - safe write that never produces a torn file.
 //! - [`ConfigError`] - error type returned by loader and writer.
-//!
-//! v1 is read-only: the `set_config` Tauri command and the `RwLock<AppConfig>`
-//! wrapper arrive with the future settings-panel PR.
 
 pub mod defaults;
 pub mod error;
@@ -70,12 +67,11 @@ pub fn consume_corrupt_marker(dir: &std::path::Path) -> Option<CorruptMarker> {
 }
 
 /// Tauri-aware entry point. Resolves the per-user config path via
-/// `AppHandle.path().app_config_dir()` (which on macOS yields
-/// `~/Library/Application Support/<bundle_id>/`), then delegates to
-/// [`load_from_path`].
+/// `AppHandle.path().app_config_dir()` (which on Windows yields
+/// `%APPDATA%/<bundle_id>/`), then delegates to [`load_from_path`].
 ///
 /// This wrapper is excluded from coverage because it exercises the real
-/// macOS filesystem and requires a fully-constructed `AppHandle`. All of
+/// filesystem and requires a fully-constructed `AppHandle`. All of
 /// its logic is in `load_from_path`, which has full coverage.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn load(app: &tauri::AppHandle) -> Result<AppConfig, ConfigError> {
@@ -91,30 +87,37 @@ pub fn load(app: &tauri::AppHandle) -> Result<AppConfig, ConfigError> {
     load_from_path(&path)
 }
 
-/// Shows a native macOS alert describing the fatal config error and exits
-/// the process with a non-zero code. Called from `lib.rs` setup when
-/// [`load`] returns `Err`. On a non-sandboxed macOS app the only realistic
-/// cause is a broken `~/Library/Application Support/` (permission, disk full,
-/// read-only filesystem), which the user cannot repair from the UI.
+/// Shows a native Windows message box describing the fatal config error and
+/// exits the process with a non-zero code. Called from `lib.rs` setup when
+/// [`load`] returns `Err`.
 ///
-/// Uses `osascript` to avoid pulling in `tauri-plugin-dialog` for a code path
-/// that runs at most once per user in the app's lifetime.
+/// Uses `MessageBoxW` via the `windows` crate (already a dependency) to
+/// avoid pulling in `tauri-plugin-dialog` for a code path that runs at most
+/// once per user in the app's lifetime.
+#[cfg(target_os = "windows")]
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn show_fatal_dialog_and_exit(err: &ConfigError) -> ! {
-    let raw = format!(
-        "Thuki could not start because of a configuration error.\n\n{err}\n\nCheck write permissions on ~/Library/Application Support/"
+    use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
+    use windows::core::HSTRING;
+
+    let title: HSTRING = "ThukiWin".into();
+    let message = format!(
+        "ThukiWin could not start because of a configuration error.\n\n{err}\n\nCheck write permissions on %APPDATA%/com.quietnode.thuki/"
     );
-    // Escape quotes and backslashes for AppleScript string literal.
-    let escaped = raw.replace('\\', "\\\\").replace('"', "\\\"");
-    let script = format!(
-        "display alert \"Thuki\" message \"{escaped}\" as critical buttons {{\"Quit\"}} default button \"Quit\""
-    );
-    let _ = std::process::Command::new("osascript")
-        .arg("-e")
-        .arg(&script)
-        .output();
-    // Also print to stderr so `bun run dev` surfaces the error in-terminal.
-    eprintln!("thuki: [config] fatal: {err}");
+    let message_h: HSTRING = message.into();
+
+    unsafe {
+        let _ = MessageBoxW(None, &message_h, &title, MB_ICONERROR | MB_OK);
+    }
+    eprintln!("thukiwin: [config] fatal: {err}");
+    std::process::exit(1);
+}
+
+/// Fallback for non-Windows platforms: prints to stderr and exits.
+#[cfg(not(target_os = "windows"))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+pub fn show_fatal_dialog_and_exit(err: &ConfigError) -> ! {
+    eprintln!("thukiwin: [config] fatal: {err}");
     std::process::exit(1);
 }
 

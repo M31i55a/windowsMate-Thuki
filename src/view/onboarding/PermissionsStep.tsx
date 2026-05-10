@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import type React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import thukiLogo from '../../../src-tauri/icons/128x128.png';
+import thukiLogo from '/128x128.png';
 import { StepCard, Badge } from './_shared';
 
 /** How often to poll for permission grants after the user requests them. */

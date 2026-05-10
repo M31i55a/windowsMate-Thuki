@@ -45,6 +45,25 @@ interface RawAppConfig {
     max_display_chars: number;
     max_context_length: number;
   };
+  search: {
+    searxng_url: string;
+    reader_url: string;
+    max_iterations: number;
+  };
+  gateway: {
+    enabled: boolean;
+    port: number;
+  };
+  tts: {
+    voice: string;
+    rate: number;
+    pitch: number;
+  };
+  agent: {
+    provider: string;
+    model: string;
+    base_url: string;
+  };
 }
 
 /** Camel-cased, frontend-friendly view of the configuration. */
@@ -66,6 +85,25 @@ export interface AppConfig {
     maxDisplayChars: number;
     maxContextLength: number;
   };
+  search: {
+    searxngUrl: string;
+    readerUrl: string;
+    maxIterations: number;
+  };
+  gateway: {
+    enabled: boolean;
+    port: number;
+  };
+  tts: {
+    voice: string;
+    rate: number;
+    pitch: number;
+  };
+  agent: {
+    provider: string;
+    model: string;
+    baseUrl: string;
+  };
 }
 
 function transform(raw: RawAppConfig): AppConfig {
@@ -85,6 +123,25 @@ function transform(raw: RawAppConfig): AppConfig {
       maxDisplayLines: raw.quote.max_display_lines,
       maxDisplayChars: raw.quote.max_display_chars,
       maxContextLength: raw.quote.max_context_length,
+    },
+    search: {
+      searxngUrl: raw.search.searxng_url,
+      readerUrl: raw.search.reader_url,
+      maxIterations: raw.search.max_iterations,
+    },
+    gateway: {
+      enabled: raw.gateway.enabled,
+      port: raw.gateway.port,
+    },
+    tts: {
+      voice: raw.tts.voice,
+      rate: raw.tts.rate,
+      pitch: raw.tts.pitch,
+    },
+    agent: {
+      provider: raw.agent.provider,
+      model: raw.agent.model,
+      baseUrl: raw.agent.base_url,
     },
   };
 }
@@ -209,5 +266,24 @@ export const DEFAULT_CONFIG: AppConfig = {
     maxDisplayLines: 4,
     maxDisplayChars: 300,
     maxContextLength: 4096,
+  },
+  search: {
+    searxngUrl: 'http://127.0.0.1:8888',
+    readerUrl: 'http://127.0.0.1:8391',
+    maxIterations: 3,
+  },
+  gateway: {
+    enabled: true,
+    port: 18789,
+  },
+  tts: {
+    voice: 'tr-TR-EmelNeural',
+    rate: 0,
+    pitch: 0,
+  },
+  agent: {
+    provider: '',
+    model: '',
+    baseUrl: '',
   },
 };

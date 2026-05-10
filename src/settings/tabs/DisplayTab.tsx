@@ -1,9 +1,5 @@
 /**
- * Display tab — appearance + presentation knobs.
- *
- * Holds the floating-window dimensions, the close-animation timing,
- * and the quoted-text preview limits. These were split out of the old
- * "General" tab so the AI tab can focus on the AI brain.
+ * Display tab - window dimensions and quoted-text preview limits.
  */
 
 import { Section, NumberSlider, NumberStepper } from '../components';
@@ -30,15 +26,7 @@ export function DisplayTab({ config, resyncToken, onSaved }: DisplayTabProps) {
           resyncToken={resyncToken}
           onSaved={onSaved}
           render={(value, setValue) => (
-            <NumberSlider
-              value={value}
-              min={200}
-              max={2000}
-              step={10}
-              unit="px"
-              onChange={setValue}
-              ariaLabel="Overlay width"
-            />
+            <NumberSlider value={value} min={200} max={2000} step={10} unit="px" onChange={setValue} ariaLabel="Overlay width" />
           )}
         />
         <SaveField
@@ -50,15 +38,7 @@ export function DisplayTab({ config, resyncToken, onSaved }: DisplayTabProps) {
           resyncToken={resyncToken}
           onSaved={onSaved}
           render={(value, setValue) => (
-            <NumberSlider
-              value={value}
-              min={200}
-              max={2000}
-              step={10}
-              unit="px"
-              onChange={setValue}
-              ariaLabel="Max chat height"
-            />
+            <NumberSlider value={value} min={200} max={2000} step={10} unit="px" onChange={setValue} ariaLabel="Max chat height" />
           )}
         />
       </Section>
@@ -73,13 +53,7 @@ export function DisplayTab({ config, resyncToken, onSaved }: DisplayTabProps) {
           resyncToken={resyncToken}
           onSaved={onSaved}
           render={(value, setValue) => (
-            <NumberStepper
-              value={value}
-              min={1}
-              max={20}
-              onChange={setValue}
-              ariaLabel="Max images"
-            />
+            <NumberStepper value={value} min={1} max={20} onChange={setValue} ariaLabel="Max images" />
           )}
         />
         <SaveField
@@ -91,13 +65,7 @@ export function DisplayTab({ config, resyncToken, onSaved }: DisplayTabProps) {
           resyncToken={resyncToken}
           onSaved={onSaved}
           render={(value, setValue) => (
-            <NumberStepper
-              value={value}
-              min={1}
-              max={100}
-              onChange={setValue}
-              ariaLabel="Max display lines"
-            />
+            <NumberStepper value={value} min={1} max={100} onChange={setValue} ariaLabel="Max display lines" />
           )}
         />
         <SaveField
@@ -109,14 +77,7 @@ export function DisplayTab({ config, resyncToken, onSaved }: DisplayTabProps) {
           resyncToken={resyncToken}
           onSaved={onSaved}
           render={(value, setValue) => (
-            <NumberStepper
-              value={value}
-              min={1}
-              max={10000}
-              step={50}
-              onChange={setValue}
-              ariaLabel="Max display chars"
-            />
+            <NumberStepper value={value} min={1} max={10000} step={50} onChange={setValue} ariaLabel="Max display chars" />
           )}
         />
         <SaveField
@@ -128,14 +89,7 @@ export function DisplayTab({ config, resyncToken, onSaved }: DisplayTabProps) {
           resyncToken={resyncToken}
           onSaved={onSaved}
           render={(value, setValue) => (
-            <NumberStepper
-              value={value}
-              min={1}
-              max={65536}
-              step={256}
-              onChange={setValue}
-              ariaLabel="Max context length"
-            />
+            <NumberStepper value={value} min={1} max={65536} step={256} onChange={setValue} ariaLabel="Max context length" />
           )}
         />
       </Section>

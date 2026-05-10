@@ -1,34 +1,11 @@
 import { motion } from 'framer-motion';
 import { useRef, useEffect } from 'react';
 import { ChatBubble } from '../components/ChatBubble';
-import { LoadingStage } from '../components/LoadingStage';
+import { TypingIndicator } from '../components/TypingIndicator';
+import { VoiceSelector } from '../components/VoiceSelector';
 import { WindowControls } from '../components/WindowControls';
 import type { Message } from '../hooks/useOllama';
-import type { SearchStage } from '../types/search';
-
-/**
- * Human-readable label shown next to the loading dots for each search stage.
- *
- * Gap-refinement rounds swap the verb so the user sees Thuki actively looking
- * at more material rather than the same linear "Searching the web" → "Reading
- * sources" repeated per round. The `RefiningSearch` event itself still
- * announces the round transition with an attempt counter.
- */
-function searchStageLabel(stage: SearchStage): string | null {
-  if (!stage) return null;
-  switch (stage.kind) {
-    case 'analyzing_query':
-      return 'Analyzing query';
-    case 'searching':
-      return stage.gap ? 'Searching more angles' : 'Searching the web';
-    case 'reading_sources':
-      return stage.gap ? 'Reading additional pages' : 'Reading sources';
-    case 'refining_search':
-      return `Refining search (${stage.attempt}/${stage.total})`;
-    case 'composing':
-      return stage.gap ? 'Composing refined answer' : 'Composing answer';
-  }
-}
+import type { TtsVoice } from '../hooks/useTts';
 
 /**
  * Props for the ConversationView component.
@@ -41,6 +18,8 @@ interface ConversationViewProps {
   isGenerating: boolean;
   /** Callback fired when the user requests to close the overlay. */
   onClose: () => void;
+  /** Minimizes the window. */
+  onMinimize: () => void;
   /**
    * Called when the bookmark icon is clicked to persist the conversation.
    * Omit to hide the save button.
@@ -68,27 +47,29 @@ interface ConversationViewProps {
   onNewConversation?: () => void;
   /** Called when the user clicks a thumbnail to preview it. */
   onImagePreview?: (path: string) => void;
-  /**
-   * Current `/search` pipeline stage. When non-null and the last assistant
-   * message has no content yet, a transient stage pill is rendered in place
-   * of the typing indicator.
-   */
-  searchStage?: SearchStage;
-  /** Currently active model slug forwarded to the WindowControls pill trigger.
-   *  `null` keeps the chip visible with a "Pick a model" placeholder. */
-  activeModel?: string | null;
-  /** Toggles the model picker panel; forwarded to WindowControls. */
-  onModelPickerToggle?: () => void;
-  /** Whether the model picker panel is open; drives aria-expanded on the pill. */
-  isModelPickerOpen?: boolean;
+  /** The message ID currently being spoken by TTS, if any. */
+  speakingMessageId: string | null;
+  /** Called when the user clicks the speak button on a message. */
+  onSpeak: (messageId: string, content: string) => void;
+  /** Called when the user clicks stop on a playing TTS message. */
+  onStopSpeaking: () => void;
+  /** Whether the TTS privacy disclosure has been acknowledged. */
+  privacyAcknowledged: boolean;
+  /** Called when the user acknowledges the TTS privacy disclosure. */
+  onAcknowledgePrivacy: () => void;
+  /** Available TTS voices for voice selector. */
+  ttsVoices: TtsVoice[];
+  /** Currently selected TTS voice short name. */
+  selectedVoice: string;
+  /** Called when the user selects a different TTS voice. */
+  onVoiceChange: (voice: string) => void;
 }
 
 /**
  * Renders the expanded chat history area of the Thuki application.
  *
  * Always fills its parent's available height (flex-1) so the window expands
- * to the morphing container's `max-chat-height` cap (config-driven, applied
- * as an inline `style.maxHeight` in App.tsx) immediately - no dynamic height
+ * to the morphing container's max-h-[600px] immediately — no dynamic height
  * calculation. Content beyond the visible area scrolls inside the flex child.
  *
  * Encapsulates the scrolling logic ("smart auto-scroll") that pins the view
@@ -98,20 +79,25 @@ export function ConversationView({
   messages,
   isGenerating,
   onClose,
+  onMinimize,
   onSave,
   isSaved,
   canSave,
   onHistoryOpen,
   onNewConversation,
   onImagePreview,
-  searchStage = null,
-  activeModel,
-  onModelPickerToggle,
-  isModelPickerOpen,
+  speakingMessageId,
+  onSpeak,
+  onStopSpeaking,
+  privacyAcknowledged,
+  onAcknowledgePrivacy,
+  ttsVoices,
+  selectedVoice,
+  onVoiceChange,
 }: ConversationViewProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  /** Threshold in pixels - if within this distance of the bottom, consider "near bottom". */
+  /** Threshold in pixels — if within this distance of the bottom, consider "near bottom". */
   const NEAR_BOTTOM_THRESHOLD = 60;
 
   /**
@@ -129,7 +115,7 @@ export function ConversationView({
   const prevMessagesLengthRef = useRef(0);
 
   /**
-   * Wheel listener - the only mechanism that can disable auto-scroll.
+   * Wheel listener — the only mechanism that can disable auto-scroll.
    * Wheel events are exclusively user-initiated (never fired by programmatic
    * scrollTop changes or layout reflows), making them a reliable signal for
    * "user scrolled up to read earlier content."
@@ -203,15 +189,22 @@ export function ConversationView({
     >
       <WindowControls
         onClose={onClose}
+        onMinimize={onMinimize}
         onSave={onSave}
         isSaved={isSaved}
         canSave={canSave}
         onNewConversation={onNewConversation}
         onHistoryOpen={onHistoryOpen}
-        activeModel={activeModel}
-        onModelPickerToggle={onModelPickerToggle}
-        isModelPickerOpen={isModelPickerOpen}
       />
+
+      {/* Voice selector — compact dropdown for TTS voice selection */}
+      <div className="px-4 pt-1 pb-0 flex items-center">
+        <VoiceSelector
+          voices={ttsVoices}
+          selectedVoice={selectedVoice}
+          onVoiceChange={onVoiceChange}
+        />
+      </div>
 
       <div
         ref={scrollContainerRef}
@@ -222,25 +215,11 @@ export function ConversationView({
             isGenerating &&
             i === messages.length - 1 &&
             msg.role === 'assistant';
-          const isThinkingPending =
-            isLastAssistant &&
-            msg.fromThink === true &&
-            !msg.content &&
-            !msg.thinkingContent;
 
           // Hide the empty assistant placeholder; the TypingIndicator
           // already covers this visual state. When thinking content is
-          // present, sandbox unavailability is flagged, or this is a
-          // search or think turn, render the bubble so the relevant
-          // card is visible immediately.
-          if (
-            isLastAssistant &&
-            !msg.content &&
-            !msg.thinkingContent &&
-            !msg.sandboxUnavailable &&
-            !msg.fromSearch &&
-            !msg.fromThink
-          )
+          // present, render the bubble so the ThinkingBlock is visible.
+          if (isLastAssistant && !msg.content && !msg.thinkingContent)
             return null;
 
           return (
@@ -248,6 +227,7 @@ export function ConversationView({
               key={msg.id}
               role={msg.role}
               content={msg.content}
+              messageId={msg.id}
               quotedText={msg.quotedText}
               index={i}
               isStreaming={isLastAssistant}
@@ -255,37 +235,27 @@ export function ConversationView({
               onImagePreview={onImagePreview}
               errorKind={msg.errorKind}
               thinkingContent={msg.thinkingContent}
-              isThinkingPending={isThinkingPending}
               isThinking={
-                isLastAssistant &&
-                msg.fromThink === true &&
-                !msg.content &&
-                !!msg.thinkingContent
+                isLastAssistant && !msg.content && !!msg.thinkingContent
               }
+              isSpeaking={msg.id === speakingMessageId}
+              onSpeak={onSpeak}
+              onStopSpeaking={onStopSpeaking}
+              privacyAcknowledged={privacyAcknowledged}
+              onAcknowledgePrivacy={onAcknowledgePrivacy}
               searchSources={msg.searchSources}
               searchWarnings={msg.searchWarnings}
               sandboxUnavailable={msg.sandboxUnavailable}
-              searchTraces={msg.searchTraces}
-              modelName={msg.modelName}
-              isSearching={
-                isGenerating &&
-                msg.fromSearch === true &&
-                i === messages.length - 1
-              }
             />
           );
         })}
 
-        {/* Loading row: always show 9-dot indicator when waiting for first
-            content. For search turns, show the stage label inline as plain
-            text next to the dots. */}
+        {/* Typing indicator (pulsing dots) shown before first token arrives */}
         {isGenerating &&
         messages[messages.length - 1]?.role === 'assistant' &&
         !messages[messages.length - 1]?.content &&
-        !messages[messages.length - 1]?.thinkingContent &&
-        !messages[messages.length - 1]?.fromSearch &&
-        !messages[messages.length - 1]?.fromThink ? (
-          <LoadingStage label={searchStageLabel(searchStage)} />
+        !messages[messages.length - 1]?.thinkingContent ? (
+          <TypingIndicator />
         ) : null}
       </div>
 

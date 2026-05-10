@@ -1,15 +1,19 @@
 /**
- * Web tab — sandbox service URLs, pipeline tuning, and timeouts for the
- * `/search` slash command.
- *
- * Sub-grouped: SERVICES (URLs), PIPELINE (knobs), TIMEOUTS (per-stage
- * seconds). The cross-section "reset to defaults" affordance lives only
- * in the About tab to keep this surface focused on tuning.
+ * Web tab - SearXNG, reader, pipeline knobs, and timeouts.
  */
 
-import { Section, NumberSlider, NumberStepper, TextField } from '../components';
+import { useState } from 'react';
+
+import {
+  Section,
+  NumberSlider,
+  NumberStepper,
+  TextField,
+  Toggle,
+} from '../components';
 import { SaveField } from '../components/SaveField';
 import { configHelp } from '../configHelpers';
+import styles from '../../styles/settings.module.css';
 import type { RawAppConfig } from '../types';
 
 interface SearchTabProps {
@@ -19,6 +23,7 @@ interface SearchTabProps {
 }
 
 export function SearchTab({ config, resyncToken, onSaved }: SearchTabProps) {
+  const [devOpen, setDevOpen] = useState(false);
   return (
     <>
       <Section heading="Services">
@@ -70,13 +75,7 @@ export function SearchTab({ config, resyncToken, onSaved }: SearchTabProps) {
           resyncToken={resyncToken}
           onSaved={onSaved}
           render={(value, setValue) => (
-            <NumberStepper
-              value={value}
-              min={1}
-              max={10}
-              onChange={setValue}
-              ariaLabel="Max iterations"
-            />
+            <NumberStepper value={value} min={1} max={10} onChange={setValue} ariaLabel="Max iterations" />
           )}
         />
         <SaveField
@@ -88,13 +87,7 @@ export function SearchTab({ config, resyncToken, onSaved }: SearchTabProps) {
           resyncToken={resyncToken}
           onSaved={onSaved}
           render={(value, setValue) => (
-            <NumberStepper
-              value={value}
-              min={1}
-              max={20}
-              onChange={setValue}
-              ariaLabel="Top-K URLs"
-            />
+            <NumberStepper value={value} min={1} max={20} onChange={setValue} ariaLabel="Top-K URLs" />
           )}
         />
         <SaveField
@@ -106,13 +99,7 @@ export function SearchTab({ config, resyncToken, onSaved }: SearchTabProps) {
           resyncToken={resyncToken}
           onSaved={onSaved}
           render={(value, setValue) => (
-            <NumberStepper
-              value={value}
-              min={1}
-              max={20}
-              onChange={setValue}
-              ariaLabel="Max SearXNG results"
-            />
+            <NumberStepper value={value} min={1} max={20} onChange={setValue} ariaLabel="Max SearXNG results" />
           )}
         />
       </Section>
@@ -127,52 +114,31 @@ export function SearchTab({ config, resyncToken, onSaved }: SearchTabProps) {
           resyncToken={resyncToken}
           onSaved={onSaved}
           render={(value, setValue) => (
-            <NumberSlider
-              value={value}
-              min={1}
-              max={300}
-              unit="s"
-              onChange={setValue}
-              ariaLabel="Search timeout"
-            />
+            <NumberSlider value={value} min={1} max={300} unit="s" onChange={setValue} ariaLabel="Search timeout" />
           )}
         />
         <SaveField
           section="search"
           fieldKey="reader_per_url_timeout_s"
-          label="Per-URL timeout"
+          label="Reader per-URL timeout"
           helper={configHelp('search', 'reader_per_url_timeout_s')}
           initialValue={config.search.reader_per_url_timeout_s}
           resyncToken={resyncToken}
           onSaved={onSaved}
           render={(value, setValue) => (
-            <NumberSlider
-              value={value}
-              min={1}
-              max={300}
-              unit="s"
-              onChange={setValue}
-              ariaLabel="Per-URL timeout"
-            />
+            <NumberSlider value={value} min={1} max={300} unit="s" onChange={setValue} ariaLabel="Reader per-URL timeout" />
           )}
         />
         <SaveField
           section="search"
           fieldKey="reader_batch_timeout_s"
-          label="Batch timeout"
+          label="Reader batch timeout"
           helper={configHelp('search', 'reader_batch_timeout_s')}
           initialValue={config.search.reader_batch_timeout_s}
           resyncToken={resyncToken}
           onSaved={onSaved}
           render={(value, setValue) => (
-            <NumberSlider
-              value={value}
-              min={1}
-              max={300}
-              unit="s"
-              onChange={setValue}
-              ariaLabel="Batch timeout"
-            />
+            <NumberSlider value={value} min={1} max={300} unit="s" onChange={setValue} ariaLabel="Reader batch timeout" />
           )}
         />
         <SaveField
@@ -184,14 +150,7 @@ export function SearchTab({ config, resyncToken, onSaved }: SearchTabProps) {
           resyncToken={resyncToken}
           onSaved={onSaved}
           render={(value, setValue) => (
-            <NumberSlider
-              value={value}
-              min={1}
-              max={300}
-              unit="s"
-              onChange={setValue}
-              ariaLabel="Judge timeout"
-            />
+            <NumberSlider value={value} min={1} max={300} unit="s" onChange={setValue} ariaLabel="Judge timeout" />
           )}
         />
         <SaveField
@@ -203,17 +162,48 @@ export function SearchTab({ config, resyncToken, onSaved }: SearchTabProps) {
           resyncToken={resyncToken}
           onSaved={onSaved}
           render={(value, setValue) => (
-            <NumberSlider
-              value={value}
-              min={1}
-              max={300}
-              unit="s"
-              onChange={setValue}
-              ariaLabel="Router timeout"
-            />
+            <NumberSlider value={value} min={1} max={300} unit="s" onChange={setValue} ariaLabel="Router timeout" />
           )}
         />
       </Section>
+
+      <div className={styles.devSection}>
+        <button
+          type="button"
+          className={styles.devTrigger}
+          aria-expanded={devOpen}
+          aria-controls="dev-diagnostics"
+          onClick={() => setDevOpen((o) => !o)}
+        >
+          <span className={styles.devTriggerLabel}>Diagnostics</span>
+          <span className={styles.devTag}>DEV</span>
+          <svg
+            className={`${styles.devChevron} ${devOpen ? styles.devChevronOpen : ''}`}
+            viewBox="0 0 10 10"
+            fill="currentColor"
+            aria-hidden
+          >
+            <path d="M3 2l4 3-4 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+          </svg>
+        </button>
+        {devOpen && (
+          <div id="dev-diagnostics">
+            <SaveField
+              section="debug"
+              fieldKey="search_trace_enabled"
+              label="Search trace"
+              helper={configHelp('debug', 'search_trace_enabled')}
+              initialValue={config.debug.search_trace_enabled}
+              resyncToken={resyncToken}
+              onSaved={onSaved}
+              rightAlign
+              render={(value, setValue) => (
+                <Toggle checked={value} onChange={setValue} ariaLabel="Enable search trace" />
+              )}
+            />
+          </div>
+        )}
+      </div>
     </>
   );
 }

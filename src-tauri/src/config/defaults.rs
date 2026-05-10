@@ -168,21 +168,16 @@ pub const PIPELINE_INPUT_CHAR_BUDGET: usize = 200_000;
 /// slow service.
 pub const BOUNDS_TIMEOUT_S: (u64, u64) = (1, 300);
 
-/// Whether the unified trace recorder writes forensic per-conversation
-/// trace files for the chat layer AND the `/search` pipeline.
+/// Whether the `/search` pipeline writes a forensic per-turn trace file.
 ///
 /// Off by default. Intended for local quality investigation only: when on,
-/// the recorder writes every chat turn (user message, assistant streaming
-/// tokens, screen captures, conversation lifecycle) AND every search-pipeline
-/// step (LLM requests/responses, SearXNG queries, reader batches, judge
-/// verdicts) to JSON-Lines files under
-/// `~/Library/Application Support/com.quietnode.thuki/traces/`. Files are
-/// grouped by domain (`traces/chat/<conversation_id>.jsonl` and
-/// `traces/search/<conversation_id>.jsonl`) so an analysis agent can be
-/// pointed at exactly the slice it cares about. Toggleable from the
-/// Settings panel (Web tab, Diagnostics section). Off in shipped builds
-/// by default.
-pub const DEFAULT_DEBUG_TRACE_ENABLED: bool = false;
+/// the pipeline records every LLM request/response, every SearXNG query and
+/// raw response body, every reader batch (per-URL latency, raw body, full
+/// extracted text), and every judge verdict to a JSON-Lines file under
+/// `~/Library/Application Support/com.quietnode.thuki/traces/`. Toggleable
+/// from the Settings panel (Web tab, Diagnostics section). Off in shipped
+/// builds by default.
+pub const DEFAULT_DEBUG_SEARCH_TRACE_ENABLED: bool = false;
 
 // Ollama API baked-in limits: not exposed in config.toml because they bound
 // attacker-controlled data (response bodies from the local Ollama daemon) and
@@ -260,46 +255,24 @@ pub const ALLOWED_FIELDS: &[(&str, &str)] = &[
     ("search", "router_timeout_s"),
     ("search", "pipeline_wall_clock_budget_s"),
     // [debug]
-    ("debug", "trace_enabled"),
-    // [updater]
-    ("updater", "auto_check"),
-    ("updater", "check_interval_hours"),
-    ("updater", "manifest_url"),
+    ("debug", "search_trace_enabled"),
+    // [gateway]
+    ("gateway", "enabled"),
+    ("gateway", "port"),
+    // [tts]
+    ("tts", "voice"),
+    ("tts", "rate"),
+    ("tts", "pitch"),
+    // [agent]
+    ("agent", "provider"),
+    ("agent", "model"),
+    ("agent", "base_url"),
 ];
 
 /// Authoritative allowlist of section names accepted by `reset_config`.
 /// Mirrors the top-level structure of `AppConfig`.
-pub const ALLOWED_SECTIONS: &[&str] = &[
-    "inference",
-    "prompt",
-    "window",
-    "quote",
-    "search",
-    "debug",
-    "updater",
-];
-
-// Updater
-/// Whether Thuki polls for new releases automatically at startup and periodically.
-pub const DEFAULT_UPDATER_AUTO_CHECK: bool = true;
-/// Hours between automatic background update checks. Bound to 1..168 (one week).
-pub const DEFAULT_UPDATER_CHECK_INTERVAL_HOURS: u64 = 24;
-/// Accepted range for `check_interval_hours`. 1 h minimum keeps checks meaningful;
-/// 168 h (one week) is the practical ceiling for a desktop update poller.
-pub const BOUNDS_UPDATER_CHECK_INTERVAL_HOURS: (u64, u64) = (1, 168);
-/// URL of the Tauri updater JSON manifest. Points to the latest GitHub release asset.
-pub const DEFAULT_UPDATER_MANIFEST_URL: &str =
-    "https://github.com/quiet-node/thuki/releases/latest/download/latest.json";
-/// Filename of the JSON sidecar that persists snooze deadlines across restarts.
-/// Lives next to `config.toml` in `app_config_dir`. Single source of truth so
-/// the writer (commands.rs) and the loader (lib.rs) cannot drift.
-pub const DEFAULT_UPDATER_STATE_FILENAME: &str = "updater_state.json";
-/// Defense-in-depth upper bound on snooze duration accepted from the frontend
-/// IPC boundary (in hours). One year is far longer than any UI-driven snooze
-/// the app exposes today, but small enough that `hours * 3600` cannot overflow
-/// `u64` even when added to a future Unix timestamp. Saturating arithmetic in
-/// the command handlers makes this defensive rather than load-bearing.
-pub const MAX_UPDATER_SNOOZE_HOURS: u64 = 8760;
+pub const ALLOWED_SECTIONS: &[&str] =
+    &["inference", "prompt", "window", "quote", "search", "debug", "gateway", "tts", "agent"];
 
 /// Special turn-boundary tokens used by the major Ollama-served model families.
 /// Ollama normally parses these out of `/api/chat` responses, but some fine-tunes
@@ -318,6 +291,25 @@ pub const MAX_UPDATER_SNOOZE_HOURS: u64 = 8760;
 /// Not user-tunable: defense-in-depth bound on external/attacker-controlled data.
 /// Exposing it would let a malformed or adversarial model response disable the
 /// sanitization layer.
+// ─── Windows-specific defaults ───────────────────────────────────────────────
+
+/// Gateway defaults.
+pub const DEFAULT_GATEWAY_ENABLED: bool = false;
+pub const DEFAULT_GATEWAY_PORT: u16 = 18789;
+pub const BOUNDS_GATEWAY_PORT: (u16, u16) = (1024, 65535);
+
+/// TTS defaults.
+pub const DEFAULT_TTS_VOICE: &str = "tr-TR-EmelNeural";
+pub const DEFAULT_TTS_RATE: i32 = 0;
+pub const DEFAULT_TTS_PITCH: i32 = 0;
+pub const BOUNDS_TTS_RATE: (i32, i32) = (-100, 100);
+pub const BOUNDS_TTS_PITCH: (i32, i32) = (-100, 100);
+
+/// Agent mode defaults.
+pub const DEFAULT_AGENT_PROVIDER: &str = "ollama";
+pub const DEFAULT_AGENT_MODEL: &str = "";
+pub const DEFAULT_AGENT_BASE_URL: &str = "";
+
 pub const STRIP_PATTERNS: &[&str] = &[
     "<|im_start|>",
     "<|im_end|>",

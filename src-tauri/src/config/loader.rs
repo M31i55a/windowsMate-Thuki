@@ -22,19 +22,21 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::defaults::{
-    BOUNDS_KEEP_WARM_INACTIVITY_MINUTES, BOUNDS_MAX_CHAT_HEIGHT, BOUNDS_MAX_IMAGES,
-    BOUNDS_MAX_ITERATIONS, BOUNDS_NUM_CTX, BOUNDS_OVERLAY_WIDTH,
+    BOUNDS_GATEWAY_PORT, BOUNDS_KEEP_WARM_INACTIVITY_MINUTES, BOUNDS_MAX_CHAT_HEIGHT,
+    BOUNDS_MAX_IMAGES, BOUNDS_MAX_ITERATIONS, BOUNDS_NUM_CTX, BOUNDS_OVERLAY_WIDTH,
     BOUNDS_PIPELINE_WALL_CLOCK_BUDGET_S, BOUNDS_QUOTE_MAX_CONTEXT_LENGTH,
-    BOUNDS_QUOTE_MAX_DISPLAY_CHARS, BOUNDS_QUOTE_MAX_DISPLAY_LINES, BOUNDS_SEARXNG_MAX_RESULTS,
-    BOUNDS_TIMEOUT_S, BOUNDS_TOP_K_URLS, BOUNDS_UPDATER_CHECK_INTERVAL_HOURS,
-    DEFAULT_JUDGE_TIMEOUT_S, DEFAULT_KEEP_WARM_INACTIVITY_MINUTES, DEFAULT_MAX_CHAT_HEIGHT,
-    DEFAULT_MAX_IMAGES, DEFAULT_MAX_ITERATIONS, DEFAULT_NUM_CTX, DEFAULT_OLLAMA_URL,
-    DEFAULT_OVERLAY_WIDTH, DEFAULT_PIPELINE_WALL_CLOCK_BUDGET_S, DEFAULT_QUOTE_MAX_CONTEXT_LENGTH,
-    DEFAULT_QUOTE_MAX_DISPLAY_CHARS, DEFAULT_QUOTE_MAX_DISPLAY_LINES,
-    DEFAULT_READER_BATCH_TIMEOUT_S, DEFAULT_READER_PER_URL_TIMEOUT_S, DEFAULT_READER_URL,
-    DEFAULT_ROUTER_TIMEOUT_S, DEFAULT_SEARCH_TIMEOUT_S, DEFAULT_SEARXNG_MAX_RESULTS,
-    DEFAULT_SEARXNG_URL, DEFAULT_TOP_K_URLS, DEFAULT_UPDATER_CHECK_INTERVAL_HOURS,
-    DEFAULT_UPDATER_MANIFEST_URL, SLASH_COMMAND_PROMPT_APPENDIX,
+    BOUNDS_QUOTE_MAX_DISPLAY_CHARS, BOUNDS_QUOTE_MAX_DISPLAY_LINES,
+    BOUNDS_SEARXNG_MAX_RESULTS, BOUNDS_TIMEOUT_S, BOUNDS_TOP_K_URLS, BOUNDS_TTS_PITCH,
+    BOUNDS_TTS_RATE, DEFAULT_AGENT_PROVIDER,
+    DEFAULT_GATEWAY_PORT, DEFAULT_JUDGE_TIMEOUT_S, DEFAULT_KEEP_WARM_INACTIVITY_MINUTES,
+    DEFAULT_MAX_CHAT_HEIGHT, DEFAULT_MAX_IMAGES, DEFAULT_MAX_ITERATIONS, DEFAULT_NUM_CTX,
+    DEFAULT_OLLAMA_URL, DEFAULT_OVERLAY_WIDTH, DEFAULT_PIPELINE_WALL_CLOCK_BUDGET_S,
+    DEFAULT_QUOTE_MAX_CONTEXT_LENGTH, DEFAULT_QUOTE_MAX_DISPLAY_CHARS,
+    DEFAULT_QUOTE_MAX_DISPLAY_LINES, DEFAULT_READER_BATCH_TIMEOUT_S,
+    DEFAULT_READER_PER_URL_TIMEOUT_S, DEFAULT_READER_URL, DEFAULT_ROUTER_TIMEOUT_S,
+    DEFAULT_SEARCH_TIMEOUT_S, DEFAULT_SEARXNG_MAX_RESULTS, DEFAULT_SEARXNG_URL,
+    DEFAULT_SYSTEM_PROMPT_BASE, DEFAULT_TOP_K_URLS, DEFAULT_TTS_PITCH, DEFAULT_TTS_RATE,
+    DEFAULT_TTS_VOICE, SLASH_COMMAND_PROMPT_APPENDIX,
 };
 use super::error::ConfigError;
 use super::schema::AppConfig;
@@ -152,12 +154,13 @@ pub(crate) fn resolve(config: &mut AppConfig) {
         "inference.num_ctx",
     );
 
-    // Prompt section: compose the user's persona with the slash-command
-    // appendix into the runtime-only `resolved_system`. The on-disk `system`
-    // string is the single source of truth; if the user has cleared it, no
-    // persona is sent (only the appendix).
-    config.prompt.resolved_system =
-        compose_system_prompt(&config.prompt.system, SLASH_COMMAND_PROMPT_APPENDIX);
+    // Prompt section: empty base -> built-in. Compose resolved_system.
+    let base = if config.prompt.system.trim().is_empty() {
+        DEFAULT_SYSTEM_PROMPT_BASE
+    } else {
+        &config.prompt.system
+    };
+    config.prompt.resolved_system = compose_system_prompt(base, SLASH_COMMAND_PROMPT_APPENDIX);
 
     // Window section.
     clamp_f64(
@@ -278,16 +281,36 @@ pub(crate) fn resolve(config: &mut AppConfig) {
 
     // Debug section: boolean flag has no resolution step (any value is valid).
 
-    // Updater section.
-    clamp_u64(
-        &mut config.updater.check_interval_hours,
-        BOUNDS_UPDATER_CHECK_INTERVAL_HOURS,
-        DEFAULT_UPDATER_CHECK_INTERVAL_HOURS,
-        "updater.check_interval_hours",
+    // Gateway section (Windows-specific).
+    clamp_u16(
+        &mut config.gateway.port,
+        BOUNDS_GATEWAY_PORT,
+        DEFAULT_GATEWAY_PORT,
+        "gateway.port",
     );
-    if config.updater.manifest_url.trim().is_empty() {
-        config.updater.manifest_url = DEFAULT_UPDATER_MANIFEST_URL.to_string();
+
+    // TTS section (Windows-specific).
+    if config.tts.voice.trim().is_empty() {
+        config.tts.voice = DEFAULT_TTS_VOICE.to_string();
     }
+    clamp_i32(
+        &mut config.tts.rate,
+        BOUNDS_TTS_RATE,
+        DEFAULT_TTS_RATE,
+        "tts.rate",
+    );
+    clamp_i32(
+        &mut config.tts.pitch,
+        BOUNDS_TTS_PITCH,
+        DEFAULT_TTS_PITCH,
+        "tts.pitch",
+    );
+
+    // Agent section (Windows-specific).
+    if config.agent.provider.trim().is_empty() {
+        config.agent.provider = DEFAULT_AGENT_PROVIDER.to_string();
+    }
+    // model and base_url are allowed to be empty (means "use default for the provider").
 }
 
 /// Composes the user-editable base prompt with the generated slash-command
@@ -298,8 +321,6 @@ pub fn compose_system_prompt(base: &str, appendix: &str) -> String {
     let appendix = appendix.trim();
     if appendix.is_empty() {
         base.to_string()
-    } else if base.is_empty() {
-        appendix.to_string()
     } else {
         format!("{base}\n\n{appendix}")
     }
@@ -343,6 +364,30 @@ fn clamp_u64(value: &mut u64, bounds: (u64, u64), default: u64, field: &str) {
 }
 
 fn clamp_u32(value: &mut u32, bounds: (u32, u32), default: u32, field: &str) {
+    if !(bounds.0..=bounds.1).contains(value) {
+        eprintln!(
+            "thuki: [config] {field}={value} out of bounds [{min}, {max}]; using default {default}",
+            min = bounds.0,
+            max = bounds.1,
+            value = *value
+        );
+        *value = default;
+    }
+}
+
+fn clamp_u16(value: &mut u16, bounds: (u16, u16), default: u16, field: &str) {
+    if !(bounds.0..=bounds.1).contains(value) {
+        eprintln!(
+            "thuki: [config] {field}={value} out of bounds [{min}, {max}]; using default {default}",
+            min = bounds.0,
+            max = bounds.1,
+            value = *value
+        );
+        *value = default;
+    }
+}
+
+fn clamp_i32(value: &mut i32, bounds: (i32, i32), default: i32, field: &str) {
     if !(bounds.0..=bounds.1).contains(value) {
         eprintln!(
             "thuki: [config] {field}={value} out of bounds [{min}, {max}]; using default {default}",

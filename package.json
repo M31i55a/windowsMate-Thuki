@@ -1,7 +1,7 @@
 {
-  "name": "thuki",
+  "name": "thukiwin",
   "version": "0.8.5",
-  "description": "A floating AI secretary for macOS, powered by local Ollama models",
+  "description": "A floating AI secretary for Windows, powered by local Ollama models",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -10,12 +10,12 @@
   "homepage": "https://github.com/quiet-node/thuki",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/kill-dev-port.cjs",
     "dev": "tauri dev",
     "frontend:dev": "vite",
     "generate:commands": "bun scripts/generate-commands.ts",
     "build:frontend": "tsc && vite build",
-    "build:backend": "tauri build --bundles app",
-    "build:release": "tauri build --bundles app -c \"{\\\"bundle\\\":{\\\"createUpdaterArtifacts\\\":true}}\"",
+    "build:backend": "tauri build --bundles nsis",
     "build:all": "bun run build:frontend && bun run build:backend",
     "preview": "vite preview",
     "tauri": "tauri",
@@ -25,10 +25,8 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" && cd src-tauri && cargo fmt",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" && cd src-tauri && cargo fmt -- --check",
     "typecheck": "tsc --noEmit",
-    "llm-box:start": "docker compose -f sandbox/llm-box/docker-compose.yml up -d",
-    "llm-box:stop": "docker compose -f sandbox/llm-box/docker-compose.yml down -v",
-    "search-box:start": "docker compose -f sandbox/search-box/docker-compose.yml up -d --build",
-    "search-box:stop": "docker compose -f sandbox/search-box/docker-compose.yml down",
+    "sandbox:start": "docker compose -f sandbox/docker-compose.yml up -d",
+    "sandbox:stop": "docker compose -f sandbox/docker-compose.yml down -v",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -39,8 +37,8 @@
     "validate-build": "bun run lint && bun run format:check && bun run typecheck && bun run build:all"
   },
   "dependencies": {
-    "@fontsource/source-serif-4": "^5.2.9",
     "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/plugin-notification": "^2.3.3",
     "framer-motion": "^12.38.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -52,7 +50,7 @@
     "vite": "^8.0.5"
   },
   "devDependencies": {
-    "@eslint-react/eslint-plugin": "5.7.2",
+    "@eslint-react/eslint-plugin": "4.2.3",
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.2.2",
     "@tauri-apps/cli": "^2.10.1",

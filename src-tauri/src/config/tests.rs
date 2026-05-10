@@ -6,28 +6,26 @@
 //! `schema`, and the helpers that feed them.
 //!
 //! The Tauri-aware `load(app)` wrapper at `config::load` is excluded from
-//! coverage because it requires a real `AppHandle` and the real macOS
-//! filesystem. Its internals delegate to `load_from_path`, which has full
-//! coverage here.
+//! coverage because it requires a real `AppHandle` and the real filesystem.
+//! Its internals delegate to `load_from_path`, which has full coverage here.
 
 use std::path::PathBuf;
 
 use super::defaults::{
-    DEFAULT_DEBUG_TRACE_ENABLED, DEFAULT_JUDGE_TIMEOUT_S, DEFAULT_KEEP_WARM_INACTIVITY_MINUTES,
-    DEFAULT_MAX_CHAT_HEIGHT, DEFAULT_MAX_IMAGES, DEFAULT_MAX_ITERATIONS, DEFAULT_NUM_CTX,
-    DEFAULT_OLLAMA_URL, DEFAULT_OVERLAY_WIDTH, DEFAULT_QUOTE_MAX_CONTEXT_LENGTH,
-    DEFAULT_QUOTE_MAX_DISPLAY_CHARS, DEFAULT_QUOTE_MAX_DISPLAY_LINES,
-    DEFAULT_READER_BATCH_TIMEOUT_S, DEFAULT_READER_PER_URL_TIMEOUT_S, DEFAULT_READER_URL,
-    DEFAULT_ROUTER_TIMEOUT_S, DEFAULT_SEARCH_TIMEOUT_S, DEFAULT_SEARXNG_MAX_RESULTS,
-    DEFAULT_SEARXNG_URL, DEFAULT_SYSTEM_PROMPT_BASE, DEFAULT_TOP_K_URLS,
-    DEFAULT_UPDATER_CHECK_INTERVAL_HOURS, DEFAULT_UPDATER_MANIFEST_URL,
-    SLASH_COMMAND_PROMPT_APPENDIX,
+    DEFAULT_DEBUG_SEARCH_TRACE_ENABLED, DEFAULT_JUDGE_TIMEOUT_S,
+    DEFAULT_KEEP_WARM_INACTIVITY_MINUTES, DEFAULT_MAX_CHAT_HEIGHT, DEFAULT_MAX_IMAGES,
+    DEFAULT_MAX_ITERATIONS, DEFAULT_NUM_CTX, DEFAULT_OLLAMA_URL, DEFAULT_OVERLAY_WIDTH,
+    DEFAULT_QUOTE_MAX_CONTEXT_LENGTH, DEFAULT_QUOTE_MAX_DISPLAY_CHARS,
+    DEFAULT_QUOTE_MAX_DISPLAY_LINES, DEFAULT_READER_BATCH_TIMEOUT_S,
+    DEFAULT_READER_PER_URL_TIMEOUT_S, DEFAULT_READER_URL, DEFAULT_ROUTER_TIMEOUT_S,
+    DEFAULT_SEARCH_TIMEOUT_S, DEFAULT_SEARXNG_MAX_RESULTS, DEFAULT_SEARXNG_URL,
+    DEFAULT_SYSTEM_PROMPT_BASE, DEFAULT_TOP_K_URLS, SLASH_COMMAND_PROMPT_APPENDIX,
 };
 use super::error::ConfigError;
 use super::loader::{compose_system_prompt, load_from_path};
 use super::schema::{
     AppConfig, DebugSection, InferenceSection, PromptSection, QuoteSection, SearchSection,
-    UpdaterSection, WindowSection,
+    WindowSection,
 };
 use super::writer::atomic_write;
 
@@ -56,7 +54,7 @@ fn defaults_const_values_match_schema_defaults() {
         DEFAULT_KEEP_WARM_INACTIVITY_MINUTES
     );
     assert_eq!(c.inference.num_ctx, DEFAULT_NUM_CTX);
-    assert_eq!(c.prompt.system, DEFAULT_SYSTEM_PROMPT_BASE);
+    assert_eq!(c.prompt.system, "");
     assert_eq!(c.prompt.resolved_system, "");
     assert_eq!(c.window.overlay_width, DEFAULT_OVERLAY_WIDTH);
     assert_eq!(c.window.max_chat_height, DEFAULT_MAX_CHAT_HEIGHT);
@@ -96,7 +94,7 @@ fn section_defaults_are_sensible() {
     assert_eq!(m.ollama_url, DEFAULT_OLLAMA_URL);
 
     let p = PromptSection::default();
-    assert_eq!(p.system, DEFAULT_SYSTEM_PROMPT_BASE);
+    assert!(p.system.is_empty());
 
     let w = WindowSection::default();
     assert_eq!(w.overlay_width, DEFAULT_OVERLAY_WIDTH);
@@ -161,18 +159,6 @@ fn compose_system_prompt_skips_appendix_when_totally_empty() {
     assert_eq!(got, "hello");
 }
 
-#[test]
-fn compose_system_prompt_returns_appendix_only_when_base_empty() {
-    let got = compose_system_prompt("", "world");
-    assert_eq!(got, "world");
-}
-
-#[test]
-fn compose_system_prompt_returns_appendix_only_when_base_whitespace() {
-    let got = compose_system_prompt("   \n\t", "world");
-    assert_eq!(got, "world");
-}
-
 // ── loader: first run (file missing) ────────────────────────────────────────
 
 #[test]
@@ -208,7 +194,7 @@ fn load_missing_file_in_missing_parent_dir_creates_dir() {
 
 #[test]
 fn load_seed_failure_returns_seed_failed() {
-    // Parent is "/" on macOS: we have no permission to write config.toml there.
+    // Parent is "/" — we have no permission to write config.toml there.
     // Using the literal path forces the writer to hit a PermissionDenied.
     let forbidden_path = PathBuf::from("/config.toml");
     match load_from_path(&forbidden_path) {
@@ -509,29 +495,26 @@ fn resolve_empty_ollama_url_falls_back() {
 }
 
 #[test]
-fn resolve_empty_system_prompt_keeps_only_appendix() {
-    // The user has explicitly cleared their persona; resolved_system contains
-    // the slash-command appendix only. Built-in persona is no longer auto
-    // re-injected, so the on-disk file remains the single source of truth.
+fn resolve_empty_system_prompt_uses_built_in_base_plus_appendix() {
     let dir = fresh_temp_dir();
     let path = config_path_in(&dir);
     std::fs::write(
         &path,
         r#"
             [prompt]
-            system = ""
+            system = "   "
         "#,
     )
     .unwrap();
     let config = load_from_path(&path).unwrap();
-    assert_eq!(
-        config.prompt.resolved_system,
-        SLASH_COMMAND_PROMPT_APPENDIX.trim()
-    );
-    assert!(!config
+    assert!(config
         .prompt
         .resolved_system
         .contains(DEFAULT_SYSTEM_PROMPT_BASE.trim()));
+    assert!(config
+        .prompt
+        .resolved_system
+        .contains(SLASH_COMMAND_PROMPT_APPENDIX.trim()));
 }
 
 #[test]
@@ -1065,22 +1048,25 @@ fn config_error_io_error_serializes_io_source_as_display_string() {
 #[test]
 fn debug_section_default_matches_compiled_defaults() {
     let d = DebugSection::default();
-    assert_eq!(d.trace_enabled, DEFAULT_DEBUG_TRACE_ENABLED);
+    assert_eq!(d.search_trace_enabled, DEFAULT_DEBUG_SEARCH_TRACE_ENABLED);
 }
 
 #[test]
 fn app_config_default_includes_debug_section_with_compiled_defaults() {
     let c = AppConfig::default();
-    assert_eq!(c.debug.trace_enabled, DEFAULT_DEBUG_TRACE_ENABLED);
+    assert_eq!(
+        c.debug.search_trace_enabled,
+        DEFAULT_DEBUG_SEARCH_TRACE_ENABLED
+    );
 }
 
 #[test]
-fn debug_trace_enabled_round_trips_through_load() {
+fn debug_search_trace_enabled_round_trips_through_load() {
     let dir = fresh_temp_dir();
     let path = config_path_in(&dir);
-    std::fs::write(&path, "[debug]\ntrace_enabled = true\n").unwrap();
+    std::fs::write(&path, "[debug]\nsearch_trace_enabled = true\n").unwrap();
     let loaded = load_from_path(&path).unwrap();
-    assert!(loaded.debug.trace_enabled);
+    assert!(loaded.debug.search_trace_enabled);
 }
 
 #[test]
@@ -1094,74 +1080,7 @@ fn toml_without_debug_section_deserializes_to_defaults() {
     .unwrap();
     let loaded = load_from_path(&path).unwrap();
     assert_eq!(
-        loaded.debug.trace_enabled, DEFAULT_DEBUG_TRACE_ENABLED,
+        loaded.debug.search_trace_enabled, DEFAULT_DEBUG_SEARCH_TRACE_ENABLED,
         "missing [debug] section must deserialize to defaults via #[serde(default)]"
     );
-}
-
-// ── updater section ──────────────────────────────────────────────────────────
-
-#[test]
-fn default_updater_section_matches_constants() {
-    let s = UpdaterSection::default();
-    assert!(s.auto_check);
-    assert_eq!(s.check_interval_hours, DEFAULT_UPDATER_CHECK_INTERVAL_HOURS);
-    assert_eq!(s.manifest_url, DEFAULT_UPDATER_MANIFEST_URL);
-}
-
-#[test]
-fn updater_interval_too_small_resets_to_default() {
-    let dir = fresh_temp_dir();
-    let path = config_path_in(&dir);
-    std::fs::write(&path, "[updater]\ncheck_interval_hours = 0\n").unwrap();
-    let cfg = load_from_path(&path).unwrap();
-    assert_eq!(
-        cfg.updater.check_interval_hours,
-        DEFAULT_UPDATER_CHECK_INTERVAL_HOURS
-    );
-}
-
-#[test]
-fn updater_interval_too_large_resets_to_default() {
-    let dir = fresh_temp_dir();
-    let path = config_path_in(&dir);
-    std::fs::write(&path, "[updater]\ncheck_interval_hours = 999\n").unwrap();
-    let cfg = load_from_path(&path).unwrap();
-    assert_eq!(
-        cfg.updater.check_interval_hours,
-        DEFAULT_UPDATER_CHECK_INTERVAL_HOURS
-    );
-}
-
-#[test]
-fn updater_interval_in_bounds_preserved() {
-    let dir = fresh_temp_dir();
-    let path = config_path_in(&dir);
-    std::fs::write(&path, "[updater]\ncheck_interval_hours = 6\n").unwrap();
-    let cfg = load_from_path(&path).unwrap();
-    assert_eq!(cfg.updater.check_interval_hours, 6);
-}
-
-#[test]
-fn updater_empty_manifest_url_falls_back_to_default() {
-    let dir = fresh_temp_dir();
-    let path = config_path_in(&dir);
-    std::fs::write(&path, "[updater]\nmanifest_url = \"   \"\n").unwrap();
-    let cfg = load_from_path(&path).unwrap();
-    assert_eq!(cfg.updater.manifest_url, DEFAULT_UPDATER_MANIFEST_URL);
-}
-
-#[test]
-fn updater_toml_roundtrip_preserves_fields() {
-    let original = AppConfig {
-        updater: UpdaterSection {
-            auto_check: false,
-            check_interval_hours: 12,
-            manifest_url: "https://example.com/m.json".to_string(),
-        },
-        ..AppConfig::default()
-    };
-    let serialized = toml::to_string(&original).unwrap();
-    let roundtripped: AppConfig = toml::from_str(&serialized).unwrap();
-    assert_eq!(roundtripped.updater, original.updater);
 }

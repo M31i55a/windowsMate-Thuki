@@ -1,12 +1,9 @@
 /*!
- * Thuki Core Library
+ * ThukiWin Core Library
  *
- * Application bootstrap for the Thuki desktop agent. Configures the
- * system tray, global hotkey (Ctrl+Space on Windows), and window lifecycle
- * (hide-on-close instead of quit).
- *
- * On Windows the main window is a standard Tauri WebviewWindow.
- * The overlay is toggled via `tauri-plugin-global-shortcut` (Ctrl+Space).
+ * Application bootstrap for the ThukiWin desktop agent. Configures the
+ * system tray menu, window lifecycle (hide-on-close instead of quit),
+ * and Windows-specific overlay management.
  */
 
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
@@ -18,90 +15,57 @@ pub mod history;
 pub mod images;
 pub mod models;
 pub mod onboarding;
+pub mod providers;
 pub mod screenshot;
 pub mod search;
 pub mod settings_commands;
-pub mod trace;
-pub mod updater;
+pub mod tts;
 pub mod warmup;
 
-#[cfg(target_os = "macos")]
-mod activator;
+#[cfg(target_os = "windows")]
+mod windows_activator;
+#[cfg(target_os = "windows")]
+mod computer_control;
+#[cfg(target_os = "windows")]
+mod agent;
+#[cfg(target_os = "windows")]
+mod autostart;
+
+mod gateway;
+#[cfg(target_os = "windows")]
+mod windows_focus;
+
 pub mod context;
 pub mod permissions;
 
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
+#[cfg(target_os = "windows")]
+mod windows_permissions;
+#[cfg(target_os = "windows")]
+mod windows_screenshot;
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use tauri::{
+    menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Listener, Manager, RunEvent,
+    Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder,
 };
-
-#[cfg(target_os = "macos")]
-use tauri::WebviewWindow;
-
-#[cfg(target_os = "macos")]
-use tauri::ActivationPolicy;
-
-#[cfg(target_os = "macos")]
-use tauri_nspanel::{CollectionBehavior, ManagerExt, PanelLevel, StyleMask, WebviewWindowExt};
-
-#[cfg(target_os = "macos")]
-use objc2::MainThreadMarker;
-#[cfg(target_os = "macos")]
-use objc2_app_kit::NSApplication;
-
-// ─── NSPanel definition (macOS only) ────────────────────────────────────────
-
-// Each tauri_panel! invocation emits `use` statements at its call-site
-// module scope. Two calls in the same module cause name collisions, so
-// each panel subclass lives in its own private module. The underscore
-// prefix marks each module as an internal implementation detail; add
-// any future panel subclass the same way.
-//
-// ThukiPanel - overlay NSPanel: floating, keyboard input for chat.
-// ThukiSettingsPanel - settings NSPanel: non-floating, keyboard input,
-//   no ActivationPolicy switch so the Dock icon never appears.
-#[cfg(target_os = "macos")]
-mod _thuki_panel {
-    use tauri::Manager;
-    tauri_nspanel::tauri_panel! {
-        panel!(ThukiPanel {
-            config: {
-                can_become_key_window: true,
-                is_floating_panel: true
-            }
-        })
-    }
-}
-#[cfg(target_os = "macos")]
-use _thuki_panel::ThukiPanel;
-
-#[cfg(target_os = "macos")]
-mod _settings_panel {
-    use tauri::Manager;
-    tauri_nspanel::tauri_panel! {
-        panel!(ThukiSettingsPanel {
-            config: {
-                can_become_key_window: true,
-                is_floating_panel: false
-            }
-        })
-    }
-}
-#[cfg(target_os = "macos")]
-use _settings_panel::ThukiSettingsPanel;
 
 // ─── Window helpers ─────────────────────────────────────────────────────────
 
 /// Expected logical width of the overlay window for spawn-position calculations.
-const OVERLAY_LOGICAL_WIDTH: f64 = 600.0;
+const OVERLAY_LOGICAL_WIDTH: f64 = 650.0;
 /// Collapsed bar height used for Y-clamp at show time. The window starts collapsed;
 /// the ResizeObserver expands it after mount.
-const OVERLAY_LOGICAL_HEIGHT_COLLAPSED: f64 = 80.0;
+const OVERLAY_LOGICAL_HEIGHT_COLLAPSED: f64 = 60.0;
+
+/// Minibar dimensions — thin always-on-top strip shown when the user
+/// switches away from ThukiWin while a task is in progress.
+#[cfg(target_os = "windows")]
+const OVERLAY_LOGICAL_WIDTH_MINIBAR: f64 = 48.0;
+#[cfg(target_os = "windows")]
+const OVERLAY_LOGICAL_HEIGHT_MINIBAR: f64 = 48.0;
 
 /// Frontend event used to synchronize show/hide animations with native window visibility.
 const OVERLAY_VISIBILITY_EVENT: &str = "thuki://visibility";
@@ -112,9 +76,12 @@ const OVERLAY_VISIBILITY_HIDE_REQUEST: &str = "hide-request";
 /// required permissions have not yet been granted.
 const ONBOARDING_EVENT: &str = "thuki://onboarding";
 
+/// Frontend event emitted when the user switches away from ThukiWin,
+/// triggering minibar mode (thin always-on-top strip).
+#[cfg(target_os = "windows")]
+const MINIBAR_EVENT: &str = "thuki://minibar";
+
 /// Logical dimensions of the onboarding window (centered, fixed size).
-/// Content fits tightly; native macOS shadow is re-enabled for onboarding
-/// so it renders outside the window boundary without extra transparent padding.
 const ONBOARDING_LOGICAL_WIDTH: f64 = 460.0;
 const ONBOARDING_LOGICAL_HEIGHT: f64 = 640.0;
 
@@ -166,138 +133,73 @@ fn emit_overlay_visibility(
     );
 }
 
-/// CoreGraphics display lookup - uses macOS-native `CGGetDisplaysWithPoint`
-/// for hit-testing instead of manual iteration + containment checks.
-/// All coordinates are in the Quartz display coordinate space (top-left of
-/// primary display, Y-down), matching the AX API and `CGEventGetLocation`.
-#[cfg(target_os = "macos")]
-mod cg_displays {
-    use core_graphics::geometry::{CGPoint, CGRect};
+/// Requests an animated hide sequence from the frontend. The actual native
+/// window hide is deferred until the frontend exit animation completes.
+fn request_overlay_hide(app_handle: &tauri::AppHandle) {
+    if OVERLAY_INTENDED_VISIBLE.swap(false, Ordering::SeqCst) {
+        #[cfg(target_os = "windows")]
+        let _ = windows_focus::stop_focus_listener();
 
-    type CGDirectDisplayID = u32;
-
-    extern "C" {
-        fn CGGetDisplaysWithPoint(
-            point: CGPoint,
-            max_displays: u32,
-            displays: *mut CGDirectDisplayID,
-            matching_display_count: *mut u32,
-        ) -> i32;
-        fn CGDisplayBounds(display: CGDirectDisplayID) -> CGRect;
-        fn CGMainDisplayID() -> CGDirectDisplayID;
+        emit_overlay_visibility(
+            app_handle,
+            OVERLAY_VISIBILITY_HIDE_REQUEST,
+            None,
+            None,
+            None,
+            None,
+        );
     }
-
-    fn rect_to_tuple(r: CGRect) -> (f64, f64, f64, f64) {
-        (r.origin.x, r.origin.y, r.size.width, r.size.height)
-    }
-
-    /// Returns `(origin_x, origin_y, width, height)` in Quartz points for
-    /// the display containing `(global_x, global_y)`.
-    pub fn display_for_point(global_x: f64, global_y: f64) -> Option<(f64, f64, f64, f64)> {
-        unsafe {
-            let point = CGPoint::new(global_x, global_y);
-            let mut ids = [0u32; 4];
-            let mut count: u32 = 0;
-            let err = CGGetDisplaysWithPoint(point, 4, ids.as_mut_ptr(), &mut count);
-            if err != 0 || count == 0 {
-                return None;
-            }
-            Some(rect_to_tuple(CGDisplayBounds(ids[0])))
-        }
-    }
-
-    /// Returns `(origin_x, origin_y, width, height)` of the main (menu-bar) display.
-    pub fn main_display() -> (f64, f64, f64, f64) {
-        unsafe { rect_to_tuple(CGDisplayBounds(CGMainDisplayID())) }
-    }
-}
-
-/// Returns the Quartz-coordinate bounds of the display containing
-/// `(global_x, global_y)`, falling back to the main display.
-#[cfg(target_os = "macos")]
-fn find_target_monitor(global_x: f64, global_y: f64) -> (f64, f64, f64, f64) {
-    cg_displays::display_for_point(global_x, global_y).unwrap_or_else(cg_displays::main_display)
-}
-
-/// Returns Quartz-coordinate bounds of the main display as a fallback
-/// when no positioning context is available.
-#[cfg(target_os = "macos")]
-fn monitor_info_fallback() -> (f64, f64, f64, f64) {
-    cg_displays::main_display()
 }
 
 /// Shows the overlay and requests the frontend to replay its entrance animation.
 ///
-/// Uses `show_and_make_key()` to guarantee the NSPanel becomes the key window,
-/// which is required for the WebView input to receive keyboard focus reliably.
-///
-/// AX bounds and mouse position arrive in **global** screen coordinates that span
-/// all monitors. We find which monitor the activation happened on, convert to
-/// monitor-local coordinates for the positioning math, then convert the result
-/// back to global coordinates for `set_position`.
-#[cfg(target_os = "macos")]
+/// On Windows, the overlay is shown as an always-on-top, skip-taskbar window.
+/// The activation context (selected text, mouse position) is used to position
+/// the window near the cursor or selection, using Tauri's cross-platform
+/// monitor enumeration for screen bounds.
+#[cfg(target_os = "windows")]
 fn show_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::ActivationContext) {
-    let already_visible = OVERLAY_INTENDED_VISIBLE.swap(true, Ordering::SeqCst);
-    if already_visible {
+    if OVERLAY_INTENDED_VISIBLE.swap(true, Ordering::SeqCst) {
         return;
     }
 
-    // Pre-load the active model so the user's first message does not pay
-    // the cold-start penalty. Fires on all show paths: double-tap, tray,
-    // and first-launch auto-show.
-    let warmup_model = app_handle
-        .state::<models::ActiveModelState>()
-        .0
-        .lock()
-        .ok()
-        .and_then(|g| g.clone());
-    if let Some(model) = warmup_model {
-        let warmup_config = app_handle
-            .state::<parking_lot::RwLock<crate::config::AppConfig>>()
-            .read()
-            .clone();
-        let endpoint = format!(
-            "{}/api/chat",
-            warmup_config.inference.ollama_url.trim_end_matches('/')
-        );
-        let system_prompt = warmup_config.prompt.resolved_system.clone();
-        let keep_alive = if warmup_config.inference.keep_warm_inactivity_minutes == 0 {
-            None
-        } else {
-            Some(warmup::keep_alive_string(
-                warmup_config.inference.keep_warm_inactivity_minutes,
-            ))
-        };
-        let num_ctx = warmup_config.inference.num_ctx;
-        let client = app_handle.state::<reqwest::Client>().inner().clone();
-        app_handle.state::<warmup::WarmupState>().fire(
-            endpoint,
-            model,
-            system_prompt,
-            client,
-            keep_alive,
-            num_ctx,
-        );
-    }
-
-    // Extract before building local_ctx to avoid an extra clone.
     let selected_text = ctx.selected_text;
 
-    // Position the window before making it visible.
+    // Position the window using the activation context.
     let placement = if let Some(window) = app_handle.get_webview_window("main") {
-        // Pick an anchor point to identify the target monitor.
+        // Use Tauri's cross-platform monitor API to find the target monitor.
+        let monitors = app_handle.available_monitors().unwrap_or_default();
+        let primary = app_handle.primary_monitor().unwrap();
+
+        // Determine which monitor the activation occurred on.
         let anchor_point = ctx
             .bounds
             .map(|r| (r.x + r.width / 2.0, r.y + r.height / 2.0))
             .or(ctx.mouse_position);
 
-        let (mon_x, mon_y, screen_w, screen_h) = if let Some((ax, ay)) = anchor_point {
-            find_target_monitor(ax, ay)
+        let target_monitor = if let Some((ax, ay)) = anchor_point {
+            monitors.into_iter().find(|m| {
+                let pos = m.position();
+                let size = m.size();
+                let mx = pos.x as f64;
+                let my = pos.y as f64;
+                let mw = size.width as f64;
+                let mh = size.height as f64;
+                ax >= mx && ax < mx + mw && ay >= my && ay < my + mh
+            })
         } else {
-            monitor_info_fallback()
+            None
         };
 
-        // Convert global coordinates to monitor-local for the positioning math.
+        let monitor = target_monitor.unwrap_or_else(|| primary.unwrap());
+        let mon_pos = monitor.position();
+        let mon_size = monitor.size();
+        let screen_w = mon_size.width as f64;
+        let screen_h = mon_size.height as f64;
+        let mon_x = mon_pos.x as f64;
+        let mon_y = mon_pos.y as f64;
+
+        // Convert global coordinates to monitor-local for positioning math.
         let local_ctx = crate::context::ActivationContext {
             selected_text: selected_text.clone(),
             bounds: ctx.bounds.map(|r| crate::context::ScreenRect {
@@ -337,136 +239,38 @@ fn show_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::ActivationCo
         None => (None, None, None),
     };
 
-    match app_handle.get_webview_panel("main") {
-        Ok(panel) => {
-            panel.show_and_make_key();
-            emit_overlay_visibility(
-                app_handle,
-                OVERLAY_VISIBILITY_SHOW,
-                selected_text,
-                window_x,
-                window_y,
-                screen_bottom_y,
-            );
-        }
-        Err(e) => {
-            eprintln!("thuki: [show_overlay] get_webview_panel FAILED: {e:?}");
-            // Reset the flag so future activation attempts are not permanently blocked.
-            OVERLAY_INTENDED_VISIBLE.store(false, Ordering::SeqCst);
-        }
-    }
-}
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.set_always_on_top(true);
+        let _ = window.set_skip_taskbar(true);
+        let _ = window.show();
+        let _ = window.set_focus();
 
-/// Centers the settings window horizontally on its monitor and places it
-/// below the macOS menu bar with a comfortable gap. Called every time the
-/// settings window is shown so the position is always correct regardless of
-/// the OS-default spawn position or previous moves.
-#[cfg_attr(coverage_nightly, coverage(off))]
-fn position_settings_window(window: &tauri::WebviewWindow) {
-    const SETTINGS_WIDTH: f64 = 580.0;
-    // macOS menu bar is ~24 px logical on standard displays; notched MacBooks
-    // push it to ~37 px. 72 px gives a comfortable ~35-48 px visual gap below
-    // the menu bar on all hardware.
-    const TOP_MARGIN: f64 = 72.0;
-
-    let monitor = window
-        .current_monitor()
-        .ok()
-        .flatten()
-        .or_else(|| window.primary_monitor().ok().flatten());
-
-    let (x, y) = if let Some(mon) = monitor {
-        let scale = mon.scale_factor();
-        let pos = mon.position();
-        let size = mon.size();
-        let logical_w = size.width as f64 / scale;
-        let mon_x = pos.x as f64 / scale;
-        let mon_y = pos.y as f64 / scale;
-        (
-            mon_x + (logical_w - SETTINGS_WIDTH) / 2.0,
-            mon_y + TOP_MARGIN,
-        )
-    } else {
-        (100.0, TOP_MARGIN)
-    };
-
-    let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
-}
-
-/// Shows (or focuses, if already visible) the Settings window.
-///
-/// The settings window is converted to a ThukiSettingsPanel NSPanel subclass
-/// (done once in `init_settings_panel` during setup). Using NSPanel with
-/// `can_become_key_window: true` allows the window to receive keyboard focus
-/// without switching the app's ActivationPolicy to Regular. Switching to
-/// Regular is what causes the Dock icon to appear; restoring it back to
-/// Accessory is unreliable when the app is frontmost. Staying in Accessory
-/// mode permanently avoids both problems.
-///
-/// Idempotent: invoking while Settings is already visible re-focuses without
-/// double-mounting the React tree (close handler hides instead of destroying).
-///
-/// Falls back to raw WebviewWindow show/focus if the panel handle is
-/// unavailable (e.g., if init_settings_panel failed at startup).
-fn show_settings_window(app_handle: &tauri::AppHandle) {
-    #[cfg(target_os = "macos")]
-    {
-        let window = app_handle.get_webview_window("settings");
-        match app_handle.get_webview_panel("settings") {
-            Ok(panel) => {
-                // Activate the app so macOS knows which Space is "current".
-                // Without this, Thuki is not the active process (ActivationPolicy::Accessory
-                // + tray menu just dismissed), and moveToActiveSpace has no anchor Space to
-                // move to — the panel silently appears on its last-known Space (usually Space 1).
-                let _ = app_handle.run_on_main_thread(move || {
-                    if let Some(mtm) = MainThreadMarker::new() {
-                        let ns_app = NSApplication::sharedApplication(mtm);
-                        #[allow(deprecated)]
-                        ns_app.activateIgnoringOtherApps(true);
-                    }
-                    if let Some(win) = window {
-                        position_settings_window(&win);
-                    }
-                    panel.show_and_make_key();
-                });
-                return;
-            }
-            Err(e) => {
-                eprintln!("thuki: [settings] get_webview_panel failed: {e:?}");
-            }
+        // Store the main window HWND for the focus listener and start listening.
+        if let Ok(hwnd) = window.hwnd() {
+            windows_focus::set_main_hwnd(hwnd);
+            let _ = windows_focus::stop_focus_listener();
+            let handle = app_handle.clone();
+            let _ = windows_focus::start_focus_listener(Arc::new(move |_hwnd| {
+                if !windows_focus::is_minibar_active() {
+                    windows_focus::enter_minibar();
+                    let _ = handle.emit(MINIBAR_EVENT, ());
+                }
+            }));
         }
     }
-    let Some(window) = app_handle.get_webview_window("settings") else {
-        eprintln!("thuki: [settings] window 'settings' not found in app config");
-        return;
-    };
-    position_settings_window(&window);
-    let _ = window.show();
-    let _ = window.set_focus();
+    emit_overlay_visibility(
+        app_handle,
+        OVERLAY_VISIBILITY_SHOW,
+        selected_text,
+        window_x,
+        window_y,
+        screen_bottom_y,
+    );
 }
 
-/// Requests an animated hide sequence from the frontend. The actual native
-/// window hide is deferred until the frontend exit animation completes.
-fn request_overlay_hide(app_handle: &tauri::AppHandle) {
-    if OVERLAY_INTENDED_VISIBLE.swap(false, Ordering::SeqCst) {
-        emit_overlay_visibility(
-            app_handle,
-            OVERLAY_VISIBILITY_HIDE_REQUEST,
-            None,
-            None,
-            None,
-            None,
-        );
-    }
-}
-
-/// Shows the overlay and requests the frontend to replay its entrance animation.
-///
-/// Window positioning is intentionally deferred on non-macOS platforms - the
-/// activation context is forwarded to the frontend for selected-text display,
-/// but no positioning logic is applied until platform-specific activators
-/// (e.g. Windows global hotkey) are implemented.
-#[cfg(not(target_os = "macos"))]
+/// Shows the overlay on platforms that have no platform-specific implementation.
+/// Falls back to a simple show + focus with no positioning.
+#[cfg(not(target_os = "windows"))]
 fn show_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::ActivationContext) {
     if OVERLAY_INTENDED_VISIBLE.swap(true, Ordering::SeqCst) {
         return;
@@ -485,11 +289,83 @@ fn show_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::ActivationCo
     }
 }
 
+/// Opens the settings window. If already open, focuses it.
+/// Must be async — WebviewWindowBuilder deadlocks on Windows in sync commands.
+#[cfg_attr(coverage_nightly, coverage(off))]
+#[tauri::command]
+async fn open_settings_window(app_handle: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app_handle.get_webview_window("settings") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return Ok(());
+    }
+
+    let url = if cfg!(debug_assertions) {
+        WebviewUrl::External("http://localhost:1420/settings.html".parse().unwrap())
+    } else {
+        WebviewUrl::App("settings.html".into())
+    };
+
+    let window = WebviewWindowBuilder::new(&app_handle, "settings", url)
+        .title("Settings — ThukiWin")
+        .inner_size(480.0, 700.0)
+        .min_inner_size(400.0, 500.0)
+        .center()
+        .resizable(true)
+        .decorations(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .visible(true)
+        .focused(true)
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let _ = window.show();
+    let _ = window.set_focus();
+    Ok(())
+}
+
 /// Toggles the overlay between visible and hidden states.
 ///
 /// Uses an atomic flag as the single source of truth for intended visibility,
 /// which avoids race conditions with the native panel state during animations.
+///
+/// On Windows, if the overlay is in minibar mode, double-tap Ctrl restores
+/// the full overlay instead of hiding it.
 fn toggle_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::ActivationContext) {
+    #[cfg(target_os = "windows")]
+    if windows_focus::is_minibar_active() {
+        // Restore from minibar — the window is already visible, just small.
+        windows_focus::exit_minibar();
+        let handle = app_handle.clone();
+        let _ = app_handle.run_on_main_thread(move || {
+            if let Some(window) = handle.get_webview_window("main") {
+                let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize::new(
+                    OVERLAY_LOGICAL_WIDTH,
+                    OVERLAY_LOGICAL_HEIGHT_COLLAPSED,
+                )));
+                let _ = window.set_focus();
+                let _ = windows_focus::stop_focus_listener();
+                let h = handle.clone();
+                let _ = windows_focus::start_focus_listener(Arc::new(move |_hwnd| {
+                    if !windows_focus::is_minibar_active() {
+                        windows_focus::enter_minibar();
+                        let _ = h.emit(MINIBAR_EVENT, ());
+                    }
+                }));
+            }
+            emit_overlay_visibility(
+                &handle,
+                OVERLAY_VISIBILITY_SHOW,
+                None,
+                None,
+                None,
+                None,
+            );
+        });
+        return;
+    }
+
     if OVERLAY_INTENDED_VISIBLE.load(Ordering::SeqCst) {
         request_overlay_hide(app_handle);
     } else {
@@ -501,17 +377,16 @@ fn toggle_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::Activation
 ///
 /// Regular Tauri commands run on a Tokio thread pool. Calling `set_position`
 /// then `set_size` from a pool thread dispatches each as a *separate* event to
-/// the macOS main thread, which can render as two distinct display frames and
+/// the main thread, which can render as two distinct display frames and
 /// produce a visible stutter when the window grows upward (position + size both
 /// change on every token during streaming).
 ///
 /// Wrapping both calls in a single `run_on_main_thread` closure ensures they
-/// arrive on the main thread together in the same event-loop iteration. AppKit
-/// then coalesces the geometry change into one compositor frame.
+/// arrive on the main thread together in the same event-loop iteration.
 #[tauri::command]
 fn set_window_frame(app_handle: tauri::AppHandle, x: f64, y: f64, width: f64, height: f64) {
     // Reject non-finite values (NaN, Infinity) from the frontend to prevent
-    // undefined AppKit behaviour when forwarded to native window APIs.
+    // undefined behaviour when forwarded to native window APIs.
     if !x.is_finite() || !y.is_finite() || !width.is_finite() || !height.is_finite() {
         return;
     }
@@ -531,10 +406,52 @@ fn set_window_frame(app_handle: tauri::AppHandle, x: f64, y: f64, width: f64, he
 /// Synchronizes the Rust-side visibility tracking when the frontend
 /// completes its exit animation and hides the native window.
 #[tauri::command]
-#[cfg_attr(coverage_nightly, coverage(off))]
-fn notify_overlay_hidden(generation: tauri::State<crate::commands::GenerationState>) {
-    generation.cancel();
+fn notify_overlay_hidden() {
     OVERLAY_INTENDED_VISIBLE.store(false, Ordering::SeqCst);
+}
+
+/// Resizes the window to minibar dimensions and enters minibar mode.
+/// Called from the frontend when it transitions to minibar state.
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn enter_minibar_size(app_handle: tauri::AppHandle) {
+    windows_focus::enter_minibar();
+    let handle = app_handle.clone();
+    let _ = app_handle.run_on_main_thread(move || {
+        if let Some(window) = handle.get_webview_window("main") {
+            let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize::new(
+                OVERLAY_LOGICAL_WIDTH_MINIBAR,
+                OVERLAY_LOGICAL_HEIGHT_MINIBAR,
+            )));
+        }
+    });
+}
+
+/// Resizes the window back to full overlay dimensions and exits minibar mode.
+/// Called from the frontend when the user clicks the minibar to restore.
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn exit_minibar_size(app_handle: tauri::AppHandle) {
+    windows_focus::exit_minibar();
+    let handle = app_handle.clone();
+    let _ = app_handle.run_on_main_thread(move || {
+        if let Some(window) = handle.get_webview_window("main") {
+            let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize::new(
+                OVERLAY_LOGICAL_WIDTH,
+                OVERLAY_LOGICAL_HEIGHT_COLLAPSED,
+            )));
+            let _ = window.set_focus();
+            // Restart the focus listener so minibar triggers on next focus loss.
+            let _ = windows_focus::stop_focus_listener();
+            let h = handle.clone();
+            let _ = windows_focus::start_focus_listener(Arc::new(move |_hwnd| {
+                if !windows_focus::is_minibar_active() {
+                    windows_focus::enter_minibar();
+                    let _ = h.emit(MINIBAR_EVENT, ());
+                }
+            }));
+        }
+    });
 }
 
 /// Called by the frontend once its visibility event listener is registered.
@@ -545,133 +462,43 @@ fn notify_overlay_hidden(generation: tauri::State<crate::commands::GenerationSta
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn notify_frontend_ready(app_handle: tauri::AppHandle, db: tauri::State<history::Database>) {
     if LAUNCH_SHOW_PENDING.swap(false, Ordering::SeqCst) {
-        #[cfg(target_os = "macos")]
+        #[cfg(target_os = "windows")]
         {
             if let Ok(conn) = db.0.lock() {
-                let stage = onboarding::get_stage(&conn)
-                    .unwrap_or(onboarding::OnboardingStage::Permissions);
+                let stage =
+                    onboarding::get_stage(&conn).unwrap_or(onboarding::OnboardingStage::Intro);
 
-                // The "intro" stage means the user already cleared both the
-                // permissions and the model-check gates on a previous launch.
-                // Skip the live permission re-check here: on macOS 15+
-                // CGPreflightScreenCaptureAccess can return a stale false
-                // negative immediately after a restart, which would wrongly
-                // loop the user back to the permissions screen.
-                if matches!(stage, onboarding::OnboardingStage::Intro) {
+                // On Windows, there are no Accessibility or Screen Recording
+                // permission gates. Skip the permissions stage entirely and
+                // go directly to intro (or overlay if onboarding is complete).
+                if matches!(stage, onboarding::OnboardingStage::Permissions) {
+                    // Upgrade permissions stage to intro since Windows doesn't
+                    // need a permissions gate.
+                    let _ = onboarding::set_stage(&conn, &onboarding::OnboardingStage::Intro);
                     show_onboarding_window(&app_handle, onboarding::OnboardingStage::Intro);
                     return;
                 }
 
-                // For "permissions", "model_check", and "complete" stages,
-                // re-validate live macOS permissions. "complete" detects
-                // revocation after onboarding finished. "model_check" detects
-                // mid-onboarding revocation. "permissions" is the first-launch
-                // path. All three must restart the flow at Permissions if
-                // either grant has been withdrawn.
-                let ax = permissions::is_accessibility_granted();
-                let sr = permissions::is_screen_recording_granted();
-                if !ax || !sr {
-                    let _ = onboarding::set_stage(&conn, &onboarding::OnboardingStage::Permissions);
-                    show_onboarding_window(&app_handle, onboarding::OnboardingStage::Permissions);
-                    return;
-                }
-
-                // Permissions granted. If the user has not yet cleared the
-                // model-check gate, route them there. The frontend probes
-                // Ollama via `check_model_setup` and either renders the gate
-                // (Ollama unreachable / no models) or fires
-                // `advance_past_model_check` to skip straight to Intro on
-                // Ready. We do not probe here because /api/tags requires the
-                // async runtime and notify_frontend_ready is invoked
-                // synchronously from a Tauri command worker.
-                if matches!(
-                    stage,
-                    onboarding::OnboardingStage::Permissions
-                        | onboarding::OnboardingStage::ModelCheck
-                ) {
-                    let _ = onboarding::set_stage(&conn, &onboarding::OnboardingStage::ModelCheck);
-                    show_onboarding_window(&app_handle, onboarding::OnboardingStage::ModelCheck);
+                if !matches!(stage, onboarding::OnboardingStage::Complete) {
+                    show_onboarding_window(&app_handle, stage);
                     return;
                 }
                 // Complete: fall through to show the overlay.
             } else {
-                // Mutex poisoned; safe fallback.
-                show_onboarding_window(&app_handle, onboarding::OnboardingStage::Permissions);
+                show_onboarding_window(&app_handle, onboarding::OnboardingStage::Intro);
                 return;
             }
         }
-        #[cfg(not(target_os = "macos"))]
-        {
-            // On Windows / Linux: no Accessibility or Screen Recording
-            // permissions. Only run the model-check gate. If onboarding is
-            // Complete, skip directly to the overlay.
-            if let Ok(conn) = db.0.lock() {
-                let stage =
-                    onboarding::get_stage(&conn).unwrap_or(onboarding::OnboardingStage::ModelCheck);
-                match stage {
-                    onboarding::OnboardingStage::Complete => {
-                        // Fall through to show the overlay.
-                    }
-                    onboarding::OnboardingStage::Intro => {
-                        // Model check passed but user hasn't clicked "Get Started" yet.
-                        drop(conn);
-                        show_onboarding_window(&app_handle, onboarding::OnboardingStage::Intro);
-                        return;
-                    }
-                    _ => {
-                        // First launch or mid-onboarding: show the model check gate.
-                        let _ =
-                            onboarding::set_stage(&conn, &onboarding::OnboardingStage::ModelCheck);
-                        drop(conn);
-                        show_onboarding_window(
-                            &app_handle,
-                            onboarding::OnboardingStage::ModelCheck,
-                        );
-                        return;
-                    }
-                }
-            }
-        }
+
         show_overlay(&app_handle, crate::context::ActivationContext::empty());
     }
-}
-
-/// Advances the onboarding stage from `model_check` to `intro` and emits
-/// the onboarding event so the frontend swaps to `IntroStep` without a
-/// window flicker.
-///
-/// Called by `ModelCheckStep` when it observes a `Ready` setup state on
-/// mount or after a Re-check click. The caller has already verified that
-/// Ollama is reachable and at least one model is installed; this command
-/// only commits the stage advance and notifies the frontend.
-///
-/// Idempotent: writing `intro` over `intro` is a harmless no-op, so a
-/// double-fire from a frontend race cannot corrupt the stage.
-#[tauri::command]
-#[cfg_attr(coverage_nightly, coverage(off))]
-fn advance_past_model_check(
-    db: tauri::State<history::Database>,
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| format!("db lock poisoned: {e}"))?;
-    onboarding::set_stage(&conn, &onboarding::OnboardingStage::Intro)
-        .map_err(|e| format!("db write failed: {e}"))?;
-    drop(conn);
-
-    let _ = app_handle.emit(
-        ONBOARDING_EVENT,
-        OnboardingPayload {
-            stage: onboarding::OnboardingStage::Intro,
-        },
-    );
-    Ok(())
 }
 
 // ─── Onboarding completion ───────────────────────────────────────────────────
 
 /// Called when the user clicks "Get Started" on the intro screen.
 /// Marks onboarding complete in the DB, restores the window to overlay mode,
-/// and immediately shows the Ask Bar - no relaunch required.
+/// and immediately shows the Ask Bar — no relaunch required.
 #[tauri::command]
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn finish_onboarding(
@@ -682,122 +509,40 @@ fn finish_onboarding(
     onboarding::mark_complete(&conn).map_err(|e| format!("db write failed: {e}"))?;
     drop(conn);
 
-    // Restore panel to overlay configuration and show the Ask Bar.
-    // Must run on the macOS main thread because NSPanel APIs are not thread-safe.
-    let handle = app_handle.clone();
-    let _ = app_handle.run_on_main_thread(move || {
-        // Resize the window back to the collapsed overlay dimensions before
-        // positioning, so the overlay appears at the correct size.
-        if let Some(window) = handle.get_webview_window("main") {
-            let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize::new(
-                OVERLAY_LOGICAL_WIDTH,
-                OVERLAY_LOGICAL_HEIGHT_COLLAPSED,
-            )));
-        }
-        // Restore NSPanel level, shadow, and style that show_onboarding_window
-        // changed for the onboarding appearance.
-        #[cfg(target_os = "macos")]
-        init_panel(&handle);
-        show_overlay(&handle, crate::context::ActivationContext::empty());
-    });
+    // Restore overlay window properties and show the Ask Bar.
+    #[cfg(target_os = "windows")]
+    {
+        let handle = app_handle.clone();
+        let _ = app_handle.run_on_main_thread(move || {
+            if let Some(window) = handle.get_webview_window("main") {
+                let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize::new(
+                    OVERLAY_LOGICAL_WIDTH,
+                    OVERLAY_LOGICAL_HEIGHT_COLLAPSED,
+                )));
+                let _ = window.set_always_on_top(true);
+                let _ = window.set_skip_taskbar(true);
+            }
+            show_overlay(&handle, crate::context::ActivationContext::empty());
+        });
+    }
+
+    // On other platforms, just show the overlay.
+    #[cfg(not(target_os = "windows"))]
+    {
+        let handle = app_handle.clone();
+        let _ = app_handle.run_on_main_thread(move || {
+            show_overlay(&handle, crate::context::ActivationContext::empty());
+        });
+    }
 
     Ok(())
 }
 
-// ─── NSPanel initialisation ─────────────────────────────────────────────────
-
-/// Converts the main Tauri window into an NSPanel and applies the overlay
-/// configuration required to appear over fullscreen macOS applications.
-///
-/// The four critical settings are:
-/// - `PanelLevel::Floating` - floats above normal windows
-/// - `CollectionBehavior::full_screen_auxiliary()` - allows coexistence with
-///   fullscreen Spaces (this is what standard `alwaysOnTop` cannot do)
-/// - `StyleMask::nonactivating_panel()` - prevents the panel from stealing
-///   focus/activation from the fullscreen application
-/// - `set_has_shadow(false)` - disables the native compositor shadow, which
-///   renders differently for key vs. non-key windows, causing a visible change
-///   when the user clicks elsewhere. CSS `shadow-bar` provides a consistent
-///   elevation effect independent of key-window state.
-#[cfg(target_os = "macos")]
-fn init_panel(app_handle: &tauri::AppHandle) {
-    let window: WebviewWindow = app_handle
-        .get_webview_window("main")
-        .expect("main window must exist at setup time");
-
-    let panel = window
-        .to_panel::<ThukiPanel>()
-        .expect("NSPanel conversion must succeed on macOS");
-
-    panel.set_level(PanelLevel::Floating.value());
-
-    panel.set_style_mask(StyleMask::empty().nonactivating_panel().into());
-
-    panel.set_collection_behavior(
-        CollectionBehavior::new()
-            .full_screen_auxiliary()
-            .can_join_all_spaces()
-            .into(),
-    );
-
-    // Keep the panel visible when the user clicks back into the fullscreen app.
-    panel.set_hides_on_deactivate(false);
-
-    // Disable the native compositor shadow. macOS renders visually distinct
-    // shadows for key vs. non-key windows, which causes the overlay to appear
-    // different after the user clicks elsewhere. The CSS `shadow-bar` provides
-    // a stable, focus-independent elevation effect.
-    panel.set_has_shadow(false);
-}
-
-// ─── Settings panel initialisation ──────────────────────────────────────────
-
-/// Converts the settings Tauri window into a ThukiSettingsPanel NSPanel subclass.
-///
-/// Called once during app setup. The resulting panel handle is stored in the
-/// tauri-nspanel WebviewPanelManager, so subsequent calls to
-/// `get_webview_panel("settings")` retrieve the same panel without
-/// re-converting.
-///
-/// Collection behavior: `move_to_active_space` moves the panel to whichever
-/// Space is current when `show_and_make_key` is called (requires the app to be
-/// the active process first — see `show_settings_window`). `full_screen_auxiliary`
-/// allows the panel to coexist with fullscreen app Spaces.
-#[cfg(target_os = "macos")]
-#[cfg_attr(coverage_nightly, coverage(off))]
-fn init_settings_panel(app_handle: &tauri::AppHandle) {
-    let Some(window) = app_handle.get_webview_window("settings") else {
-        eprintln!("thuki: [settings] window not found during init_settings_panel");
-        return;
-    };
-    match window.to_panel::<ThukiSettingsPanel>() {
-        Ok(panel) => {
-            panel.set_floating_panel(false);
-            panel.set_level(PanelLevel::Floating.value());
-            panel.set_has_shadow(true);
-            panel.set_collection_behavior(
-                CollectionBehavior::new()
-                    .move_to_active_space()
-                    .full_screen_auxiliary()
-                    .into(),
-            );
-        }
-        Err(e) => {
-            eprintln!("thuki: [settings] NSPanel conversion failed: {e:?}");
-        }
-    }
-}
-
 // ─── Onboarding window ───────────────────────────────────────────────────────
 
-/// Sizes the main window for the onboarding screen, centers it, makes it
-/// visible, and emits `thuki://onboarding` so the frontend switches to
-/// `OnboardingView`.
-///
-/// All window mutations run on the macOS main thread via `run_on_main_thread`;
-/// the event is emitted from the same closure to avoid a race where the
-/// frontend receives the event before the window is visible.
-#[cfg(target_os = "macos")]
+/// Shows the onboarding window on Windows. Sizes the main window, centers it,
+/// shows it, and emits the onboarding event.
+#[cfg(target_os = "windows")]
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn show_onboarding_window(app_handle: &tauri::AppHandle, stage: onboarding::OnboardingStage) {
     let handle = app_handle.clone();
@@ -808,24 +553,26 @@ fn show_onboarding_window(app_handle: &tauri::AppHandle, stage: onboarding::Onbo
                 ONBOARDING_LOGICAL_HEIGHT,
             )));
             let _ = window.center();
+            let _ = window.show();
+            let _ = window.set_focus();
         }
-        match handle.get_webview_panel("main") {
-            Ok(panel) => {
-                // Use normal window level so System Settings can appear above.
-                panel.set_level(0);
-                // Re-enable native shadow for onboarding. init_panel disables
-                // it for the overlay to avoid the key/non-key shadow flicker,
-                // but for onboarding the native shadow looks professional and
-                // renders outside the window boundary - no transparent padding
-                // needed.
-                panel.set_has_shadow(true);
-                panel.show_and_make_key();
-            }
-            Err(_) => {
-                if let Some(w) = handle.get_webview_window("main") {
-                    let _ = w.show();
-                }
-            }
+        let _ = handle.emit(ONBOARDING_EVENT, OnboardingPayload { stage });
+    });
+}
+
+/// Shows the onboarding window on platforms without a specific implementation.
+#[cfg(not(target_os = "windows"))]
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn show_onboarding_window(app_handle: &tauri::AppHandle, stage: onboarding::OnboardingStage) {
+    let handle = app_handle.clone();
+    let _ = app_handle.run_on_main_thread(move || {
+        if let Some(window) = handle.get_webview_window("main") {
+            let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize::new(
+                ONBOARDING_LOGICAL_WIDTH,
+                ONBOARDING_LOGICAL_HEIGHT,
+            )));
+            let _ = window.center();
+            let _ = window.show();
         }
         let _ = handle.emit(ONBOARDING_EVENT, OnboardingPayload { stage });
     });
@@ -835,24 +582,6 @@ fn show_onboarding_window(app_handle: &tauri::AppHandle, stage: onboarding::Onbo
 #[derive(Clone, serde::Serialize)]
 struct OnboardingPayload {
     stage: onboarding::OnboardingStage,
-}
-
-/// Non-macOS onboarding window: resizes main window, centers it, makes it
-/// visible and emits `thuki://onboarding` so the frontend switches to
-/// `OnboardingView`. On Windows / Linux there is no NSPanel, so we use the
-/// regular Tauri WebviewWindow API.
-#[cfg(not(target_os = "macos"))]
-fn show_onboarding_window(app_handle: &tauri::AppHandle, stage: onboarding::OnboardingStage) {
-    if let Some(window) = app_handle.get_webview_window("main") {
-        let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize::new(
-            ONBOARDING_LOGICAL_WIDTH,
-            ONBOARDING_LOGICAL_HEIGHT,
-        )));
-        let _ = window.center();
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
-    let _ = app_handle.emit(ONBOARDING_EVENT, OnboardingPayload { stage });
 }
 
 // ─── Image cleanup ──────────────────────────────────────────────────────────
@@ -881,7 +610,7 @@ fn run_image_cleanup(app_handle: &tauri::AppHandle) {
 }
 
 /// Spawns a background Tokio task that runs the cleanup sweep on a fixed
-/// interval. Thin async wrapper - delegates to `run_image_cleanup`.
+/// interval. Thin async wrapper — delegates to `run_image_cleanup`.
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn spawn_periodic_image_cleanup(app_handle: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
@@ -895,183 +624,41 @@ fn spawn_periodic_image_cleanup(app_handle: tauri::AppHandle) {
     });
 }
 
-// ─── Trace recorder bootstrap helpers ────────────────────────────────────────
-
-/// Builds the inner recorder for the live trace wrapper based on the
-/// current `[debug] trace_enabled` value.
-///
-/// Returns a `NoopRecorder` when off (zero-cost path), a
-/// `RegistryRecorder` rooted at `app_data_dir()/traces/` when on. The
-/// caller is responsible for installing the result either as the
-/// initial state of a `LiveTraceRecorder` (at startup) or replacing
-/// the live recorder's inner (on Settings save).
-///
-/// Emits a one-line stderr warning when transitioning to the on state
-/// so a developer running `bun run dev` can see at a glance that
-/// tracing is active and where the files are landing.
-#[cfg_attr(coverage_nightly, coverage(off))]
-pub fn build_trace_inner(
-    app_handle: &tauri::AppHandle,
-    enabled: bool,
-) -> Arc<dyn trace::TraceRecorder> {
-    if !enabled {
-        return Arc::new(trace::NoopRecorder);
-    }
-    let traces_root = app_handle
-        .path()
-        .app_data_dir()
-        .map(|d| d.join("traces"))
-        .unwrap_or_else(|_| std::env::temp_dir().join("thuki").join("traces"));
-    eprintln!(
-        "thuki: [trace] trace_enabled = ON. Writing forensic JSONL to {}.",
-        traces_root.display()
-    );
-    eprintln!(
-        "thuki: [trace] Files may contain sensitive text. Disable in config.toml when not actively debugging."
-    );
-    Arc::new(trace::RegistryRecorder::new(traces_root))
-}
-
-// ─── Tray helpers ────────────────────────────────────────────────────────────
-
-/// Builds the system-tray menu. When `update_version` is `Some`, an
-/// "Update Thuki to vX.Y.Z" item is injected between the separator and Quit.
-#[cfg_attr(coverage_nightly, coverage(off))]
-fn build_tray_menu<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-    update_version: Option<&str>,
-) -> tauri::Result<tauri::menu::Menu<R>> {
-    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-
-    #[cfg(target_os = "macos")]
-    let (settings_accel, quit_accel): (Option<&str>, Option<&str>) = (Some("Cmd+,"), Some("Cmd+Q"));
-    #[cfg(not(target_os = "macos"))]
-    let (settings_accel, quit_accel): (Option<&str>, Option<&str>) =
-        (Some("Ctrl+,"), Some("Ctrl+Q"));
-
-    let show = MenuItem::with_id(app, "show", "Open Thuki", true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", "Settings…", true, settings_accel)?;
-    let sep1 = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Thuki", true, quit_accel)?;
-
-    if let Some(version) = update_version {
-        let label = format!("Update Thuki to v{version}");
-        let update = MenuItem::with_id(app, "update", &label, true, None::<&str>)?;
-        let sep2 = PredefinedMenuItem::separator(app)?;
-        Menu::with_items(app, &[&show, &settings, &sep1, &update, &sep2, &quit])
-    } else {
-        Menu::with_items(app, &[&show, &settings, &sep1, &quit])
-    }
-}
-
-/// Re-reads `UpdaterState` and atomically swaps the tray icon and menu to
-/// reflect whether an update is available.
-#[cfg_attr(coverage_nightly, coverage(off))]
-fn refresh_tray(app: &tauri::AppHandle) {
-    let state: tauri::State<updater::state::UpdaterState> = app.state();
-    let snap = state.snapshot();
-    let version = snap.update.as_ref().map(|u| u.version.clone());
-
-    let Some(tray) = app.tray_by_id("main") else {
-        return;
-    };
-
-    // Swap icon
-    let bytes: &[u8] = if version.is_some() {
-        include_bytes!("../icons/tray-update.png")
-    } else {
-        include_bytes!("../icons/128x128.png")
-    };
-    if let Ok(img) = tauri::image::Image::from_bytes(bytes) {
-        let _ = tray.set_icon(Some(img));
-    }
-
-    // Swap menu
-    if let Ok(menu) = build_tray_menu(app, version.as_deref()) {
-        let _ = tray.set_menu(Some(menu));
-    }
-}
-
 // ─── Application entry point ─────────────────────────────────────────────────
 
 /// Initialises and runs the Tauri application.
 ///
 /// Setup order:
-/// 1. `ActivationPolicy::Accessory` suppresses the Dock icon.
-/// 2. The main window is converted to an NSPanel for fullscreen overlay.
-/// 3. The settings window is converted to a ThukiSettingsPanel NSPanel subclass.
-/// 4. System tray is registered; double-tap Option listener starts.
-/// 5. `CloseRequested` is intercepted to hide instead of destroy.
+/// 1. System tray is registered; double-tap Ctrl listener starts.
+/// 2. `CloseRequested` is intercepted to hide instead of destroy.
 ///
 /// # Panics
 ///
 /// Panics if the Tauri runtime fails to initialise.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default();
-
-    #[cfg(target_os = "macos")]
-    {
-        builder = builder.plugin(tauri_nspanel::init());
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
-    }
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init());
 
     builder
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
-            #[cfg(target_os = "macos")]
-            app.set_activation_policy(ActivationPolicy::Accessory);
-
-            // ── NSPanel conversion (macOS only) ──────────────────────────
-            #[cfg(target_os = "macos")]
-            init_panel(app.app_handle());
-            #[cfg(target_os = "macos")]
-            init_settings_panel(app.app_handle());
-
             // ── System tray icon + menu ───────────────────────────────────
-            // Order chosen for muscle-memory parity with mac tray apps
-            // (Bartender, CleanShot X, Rectangle): primary action at top,
-            // settings near it with the macOS-canonical ⌘, accelerator,
-            // separator, then Quit at the bottom. The "Reveal app data"
-            // affordance lives inside the Settings → About tab so the tray
-            // stays focused on session-level actions.
-            let tray_menu = build_tray_menu(app.handle(), None)?;
+            let show_item = MenuItem::with_id(app, "show", "Open Thuki", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let tray_menu = Menu::with_items(app, &[&show_item, &quit_item])?;
 
             let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/128x128.png"))
                 .expect("Failed to load tray icon");
 
-            let _tray = TrayIconBuilder::with_id("main")
+            let _tray = TrayIconBuilder::new()
                 .icon(tray_icon)
                 .icon_as_template(false)
                 .tooltip("Thuki")
                 .menu(&tray_menu)
-                .show_menu_on_left_click(false)
+                .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => {
                         show_overlay(app, crate::context::ActivationContext::empty());
-                    }
-                    "settings" => {
-                        show_settings_window(app);
-                    }
-                    "update" => {
-                        // Trigger Install & restart directly from the tray.
-                        // The Settings banner button calls the same shared
-                        // routine through the `install_update` Tauri
-                        // command. Spawn rather than block: tray click
-                        // handlers run synchronously, but the install
-                        // performs network IO and signature verification.
-                        let app_handle = app.clone();
-                        tauri::async_runtime::spawn(async move {
-                            if let Err(e) =
-                                crate::updater::commands::install_update_inner(app_handle).await
-                            {
-                                eprintln!("tray-triggered install failed: {e}");
-                            }
-                        });
                     }
                     "quit" => {
                         app.state::<crate::commands::GenerationState>().cancel();
@@ -1081,12 +668,12 @@ pub fn run() {
                 })
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
+                        button: MouseButton::Right,
                         button_state: MouseButtonState::Up,
                         ..
                     } = event
                     {
-                        show_overlay(
+                        toggle_overlay(
                             tray.app_handle(),
                             crate::context::ActivationContext::empty(),
                         );
@@ -1094,236 +681,66 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // ── Activation listener (macOS only) ─────────────────────────
-            // Only start the event tap when Accessibility is already granted.
-            // Creating a CGEventTap without permission triggers a native macOS
-            // popup; deferring until after onboarding (and the quit+reopen for
-            // Screen Recording) avoids that redundant dialog entirely.
-            #[cfg(target_os = "macos")]
+            // ── Activation listener (Windows) ─────────────────────────
+            #[cfg(target_os = "windows")]
             {
                 let app_handle = app.handle().clone();
-                let activator = activator::OverlayActivator::new();
-                if permissions::is_accessibility_granted() {
-                    activator.start(move || {
-                        // Skip AX + clipboard when hiding - no context needed and
-                        // simulating Cmd+C against Thuki's own WebView would produce
-                        // a macOS alert sound.
-                        let is_visible = OVERLAY_INTENDED_VISIBLE.load(Ordering::SeqCst);
-                        let handle = app_handle.clone();
-                        let handle2 = app_handle.clone();
-
-                        // Dispatch context capture to a dedicated thread so the event
-                        // tap callback returns immediately. AX attribute lookups and
-                        // clipboard simulation can block for seconds (macOS AX default
-                        // timeout is ~6 s) when the focused app does not implement the
-                        // accessibility protocol. Blocking the tap callback freezes the
-                        // CFRunLoop and silently prevents all future key events from
-                        // being delivered to the activator.
-                        std::thread::spawn(move || {
-                            let ctx = crate::context::capture_activation_context(is_visible);
-                            let _ =
-                                handle.run_on_main_thread(move || toggle_overlay(&handle2, ctx));
-                        });
+                let activator = windows_activator::OverlayActivator::new();
+                activator.start(move || {
+                    let is_visible = OVERLAY_INTENDED_VISIBLE.load(Ordering::SeqCst);
+                    let handle = app_handle.clone();
+                    let handle2 = app_handle.clone();
+                    std::thread::spawn(move || {
+                        let ctx = crate::context::capture_activation_context(is_visible);
+                        let _ = handle.run_on_main_thread(move || toggle_overlay(&handle2, ctx));
                     });
-                }
+                });
                 app.manage(activator);
-            }
-
-            // ── Global shortcut (non-macOS) ───────────────────────────
-            // On Windows / Linux, register Ctrl+Space as the toggle hotkey.
-            // The macOS path uses a CoreGraphics event tap instead (activator.rs).
-            #[cfg(not(target_os = "macos"))]
-            {
-                use tauri_plugin_global_shortcut::{
-                    Code, GlobalShortcutExt, Modifiers, ShortcutState,
-                };
-                let shortcut = tauri_plugin_global_shortcut::Shortcut::new(
-                    Some(Modifiers::CONTROL),
-                    Code::Space,
-                );
-                let shortcut_handle = app.handle().clone();
-                if let Err(e) = app.handle().global_shortcut().on_shortcut(
-                    shortcut,
-                    move |_app, _shortcut, event| {
-                        if event.state() == ShortcutState::Pressed {
-                            toggle_overlay(
-                                &shortcut_handle,
-                                crate::context::ActivationContext::empty(),
-                            );
-                        }
-                    },
-                ) {
-                    eprintln!(
-                        "thuki: [windows] failed to register global shortcut Ctrl+Space: {e}"
-                    );
-                }
             }
 
             // ── Persistent HTTP client ────────────────────────────────
             app.manage(reqwest::Client::new());
-            let warmup_handle = app.handle().clone();
-            app.manage(warmup::WarmupState::with_on_loaded(Arc::new(
-                move |model| {
-                    let _ = warmup_handle.emit("warmup:model-loaded", model);
-                },
-            )));
 
-            // ── Configuration (TOML file at app_config_dir) ─────────
-            // Loaded once at startup. Missing file -> seed defaults.
-            // Corrupt file -> rename-with-timestamp + reseed. Only a hard
-            // write failure (disk full, permissions) is fatal; in that case
-            // we show a native alert and exit. See src/config/mod.rs.
-            let app_config = match crate::config::load(app.handle()) {
-                Ok(c) => c,
-                Err(e) => crate::config::show_fatal_dialog_and_exit(&e),
+            // ── TOML configuration (single source of truth) ──────────
+            let app_config = match config::load(app.handle()) {
+                Ok(cfg) => cfg,
+                Err(e) => config::show_fatal_dialog_and_exit(&e),
             };
-            // Wrap in `parking_lot::RwLock` so the Settings panel can mutate
-            // the in-memory config via `set_config_field` while readers
-            // (every Ollama call, every search call) take cheap clones via
-            // `state.read().clone()`. Parking_lot avoids std::sync poisoning
-            // on writer panic. See design doc P10.
             app.manage(parking_lot::RwLock::new(app_config));
 
-            // ── Updater state + optional background poller ────────────
-            {
-                let updater_state = updater::UpdaterState::default();
-                let running_version = app.package_info().version.to_string();
+            // ── Model picker state (active model in SQLite, not TOML) ─
+            app.manage(models::ActiveModelState::new());
 
-                let sidecar_path = app
-                    .path()
-                    .app_config_dir()
-                    .ok()
-                    .map(|d| d.join(crate::config::defaults::DEFAULT_UPDATER_STATE_FILENAME));
-
-                let mut sidecar = updater::SnoozeSidecar::default();
-                if let Some(path) = sidecar_path.as_ref() {
-                    if let Ok(loaded) = updater::SnoozeSidecar::load(path) {
-                        sidecar = loaded;
-                    }
-                }
-
-                // Detect a fresh upgrade and clear the stale TCC grants
-                // macOS keeps for the previous binary's code signature.
-                // Without this, System Settings shows the toggle on but
-                // the new binary cannot actually use the permission.
-                #[cfg(target_os = "macos")]
-                let did_upgrade = {
-                    let du = updater::tcc_reset::should_reset_for_upgrade(
-                        sidecar.last_launched_version.as_deref(),
-                        &running_version,
-                    );
-                    if du {
-                        updater::tcc_reset::tccutil_reset(&app.config().identifier);
-                        // Persist that the running version's csreq is what
-                        // owns any TCC entries on disk now (or there are no
-                        // entries, which is also fine). The click-time grant
-                        // flow consults this so the user's first grant click
-                        // after an upgrade does not trigger a second
-                        // reset+relaunch on top of the one we are about to
-                        // schedule below. Held in the sidecar (not memory)
-                        // because the relaunch wipes any in-process state
-                        // before the user could ever click.
-                        sidecar.last_reset_for_version = Some(running_version.clone());
-                    }
-                    du
-                };
-
-                // Restore persisted snooze flags into the live state.
-                updater_state.set_settings_snooze(sidecar.settings_snoozed_until);
-                updater_state.set_chat_snooze(sidecar.chat_snoozed_until);
-                // Seed the previously-seen available version so the first
-                // poll after launch can correctly distinguish "user already
-                // snoozed this version" from "new version arrived, clear
-                // snooze." Without this, every cold start would see
-                // None vs Some(v) and unconditionally clear the user's
-                // snooze.
-                updater_state
-                    .set_last_seen_update_version(sidecar.last_seen_update_version.clone());
-                // Mirror the on-disk reset marker so click-time decisions
-                // don't have to re-read the sidecar.
-                updater_state.set_last_reset_for_version(sidecar.last_reset_for_version.clone());
-
-                // Record the running version BEFORE any potential restart
-                // so the post-restart launch reads a sidecar where the
-                // recorded version matches the running version. Without
-                // this, the next launch would see another "upgrade" and
-                // restart-loop forever.
-                sidecar.last_launched_version = Some(running_version);
-                if let Some(path) = sidecar_path.as_ref() {
-                    if let Err(e) = sidecar.save(path) {
-                        eprintln!("thuki: [updater] failed to persist sidecar: {e}");
-                    }
-                }
-
-                // After `tccutil reset` clears the TCC.db entry for Thuki,
-                // the running process retains stale per-PID tracking inside
-                // macOS's `tccd` daemon. Subsequent `AXIsProcessTrusted`
-                // calls from THIS process do not register the new csreq, so
-                // Thuki is missing from System Settings → Privacy &
-                // Security → Accessibility and the user has no in-app path
-                // to grant. Empirically (user-reproduced) the only fix is
-                // a fresh process: `tccd` sees a brand new PID and
-                // registers it normally on the first AX call from
-                // onboarding. The restart is deferred so Tauri finishes
-                // wiring up the rest of `setup` before we tear it down.
-                #[cfg(target_os = "macos")]
-                if did_upgrade {
-                    let app_handle = app.handle().clone();
-                    tauri::async_runtime::spawn(async move {
-                        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-                        eprintln!(
-                            "thuki: [updater] relaunching after TCC reset \
-                             to refresh tccd PID tracking"
-                        );
-                        app_handle.restart();
-                    });
-                }
-
-                let (interval, auto_check) = {
-                    let cfg = app.state::<parking_lot::RwLock<crate::config::AppConfig>>();
-                    let g = cfg.read();
-                    (g.updater.check_interval_hours, g.updater.auto_check)
-                };
-
-                app.manage(updater_state);
-
-                // Refresh the tray icon and menu whenever the poller finds a
-                // new update. The listener must be registered after manage() so
-                // refresh_tray can read UpdaterState from managed state.
-                let tray_refresh_handle = app.handle().clone();
-                app.listen("update-available", move |_event| {
-                    refresh_tray(&tray_refresh_handle);
-                });
-
-                if auto_check {
-                    updater::poller::spawn(app.handle().clone(), interval);
-                }
-            }
+            // ── Model warmup state ────────────────────────────────────
+            app.manage(warmup::WarmupState::new());
 
             // ── Generation + conversation state ─────────────────────
             app.manage(commands::GenerationState::new());
             app.manage(commands::ConversationHistory::new());
 
-            // ── Unified trace recorder ─────────────────────────────
-            // Off by default: when `[debug] trace_enabled = false` in
-            // config.toml the live recorder wraps a `NoopRecorder` and
-            // every chat / search / screenshot event is a constant-time
-            // call. When on, it wraps a `RegistryRecorder` that routes
-            // events to per-conversation JSONL files under
-            // `app_data_dir()/traces/{chat,search}/`.
-            //
-            // Wrapped in a `LiveTraceRecorder` so toggling
-            // `[debug] trace_enabled` from the Settings panel hot-swaps
-            // the inner without requiring an app restart. See
-            // `trace::live` for the swap contract and
-            // `settings_commands::set_config_field` for the hook site.
-            let trace_enabled = app
-                .state::<parking_lot::RwLock<crate::config::AppConfig>>()
-                .read()
-                .debug
-                .trace_enabled;
-            let initial_inner = build_trace_inner(app.handle(), trace_enabled);
-            app.manage(Arc::new(trace::LiveTraceRecorder::new(initial_inner)));
+            // ── Legacy state bridges (seeded from TOML config) ──────
+            // These remain for backward compatibility with commands that
+            // reference them. They will be removed once all commands
+            // migrate to State<RwLock<AppConfig>>.
+            {
+                let cfg_guard = app.state::<parking_lot::RwLock<config::AppConfig>>();
+                let system_prompt = cfg_guard.read().prompt.resolved_system.clone();
+                let ollama_url = cfg_guard.read().inference.ollama_url.clone();
+                let model_config = commands::load_model_config();
+                app.manage(commands::SystemPrompt(system_prompt));
+                app.manage(commands::OllamaUrl(std::sync::Mutex::new(ollama_url)));
+                app.manage(model_config);
+            }
+
+            // ── TTS state ────────────────────────────────────────────────
+            app.manage(tts::TtsState::new());
+
+            // ── Agent state (Windows only) ────────────────────────────
+            #[cfg(target_os = "windows")]
+            app.manage(Arc::new(agent::AgentState::new()));
+
+            // ── Gateway state ──────────────────────────────────────────
+            app.manage(Arc::new(gateway::GatewayState::new()));
 
             // ── SQLite database for conversation history ──────────
             let app_data_dir = app
@@ -1332,35 +749,11 @@ pub fn run() {
                 .expect("failed to resolve app data directory");
             let db_conn = database::open_database(&app_data_dir)
                 .expect("failed to initialise SQLite database");
-
-            // ── Active-model state: seed from SQLite app_config table ──
-            // The installed list isn't queried here (no async runtime yet).
-            // get_model_picker_state reconciles against the live /api/tags
-            // inventory on first picker open and may replace this seed.
-            // When nothing is persisted the seed is `None`: there is no
-            // compiled fallback. The Phase 3 onboarding gate refuses to
-            // open the overlay until a real installed model is selected,
-            // so an unset slug never reaches `ask_ollama`.
-            let persisted_active = database::get_config(&db_conn, models::ACTIVE_MODEL_KEY)
-                .expect("failed to read active_model from app_config");
-            let initial_active_model =
-                models::resolve_seed_active_model(persisted_active.as_deref());
-            app.manage(models::ActiveModelState(std::sync::Mutex::new(
-                initial_active_model,
-            )));
-            app.manage(models::ModelCapabilitiesCache::default());
             app.manage(history::Database(std::sync::Mutex::new(db_conn)));
 
             // ── Orphaned image cleanup (startup + periodic) ─────────
             run_image_cleanup(app.handle());
             spawn_periodic_image_cleanup(app.handle().clone());
-
-            // ── VRAM sentinel poll ─────────────────────────────────
-            // Detects external VRAM changes (ollama stop, TTL expiry,
-            // daemon restart) that Thuki did not initiate. Polls
-            // /api/ps every VRAM_POLL_INTERVAL_SECS seconds and emits
-            // warmup:model-loaded or warmup:model-evicted as needed.
-            warmup::spawn_vram_poller(app.handle().clone());
 
             Ok(())
         })
@@ -1370,28 +763,17 @@ pub fn run() {
             #[cfg(not(coverage))]
             commands::cancel_generation,
             #[cfg(not(coverage))]
-            commands::open_url,
-            #[cfg(not(coverage))]
-            search::search_pipeline,
-            #[cfg(not(coverage))]
             commands::reset_conversation,
             #[cfg(not(coverage))]
-            commands::record_conversation_end,
-            settings_commands::get_config,
-            settings_commands::set_config_field,
-            settings_commands::reset_config,
-            settings_commands::reload_config_from_disk,
-            settings_commands::get_corrupt_marker,
+            commands::get_model_config,
             #[cfg(not(coverage))]
-            settings_commands::reveal_config_in_finder,
+            commands::get_ollama_url,
             #[cfg(not(coverage))]
-            models::get_model_picker_state,
+            commands::set_ollama_url,
             #[cfg(not(coverage))]
-            models::set_active_model,
+            commands::get_settings,
             #[cfg(not(coverage))]
-            models::check_model_setup,
-            #[cfg(not(coverage))]
-            models::get_model_capabilities,
+            commands::set_setting,
             #[cfg(not(coverage))]
             history::save_conversation,
             #[cfg(not(coverage))]
@@ -1417,41 +799,92 @@ pub fn run() {
             notify_overlay_hidden,
             notify_frontend_ready,
             set_window_frame,
-            #[cfg(not(coverage))]
-            permissions::check_accessibility_permission,
-            #[cfg(not(coverage))]
-            permissions::open_accessibility_settings,
-            #[cfg(not(coverage))]
-            permissions::check_screen_recording_permission,
-            #[cfg(not(coverage))]
-            permissions::open_screen_recording_settings,
-            #[cfg(not(coverage))]
-            permissions::request_screen_recording_access,
-            #[cfg(not(coverage))]
-            permissions::check_screen_recording_tcc_granted,
-            #[cfg(not(coverage))]
-            permissions::quit_and_relaunch,
             finish_onboarding,
-            advance_past_model_check,
+            // Windows-specific permission commands
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            windows_permissions::check_accessibility_permission,
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            windows_permissions::open_accessibility_settings,
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            windows_permissions::check_screen_recording_permission,
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            windows_permissions::open_screen_recording_settings,
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            windows_permissions::request_screen_recording_access,
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            windows_permissions::check_screen_recording_tcc_granted,
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            windows_permissions::quit_and_relaunch,
+            // TTS commands
             #[cfg(not(coverage))]
+            tts::tts_speak,
+            #[cfg(not(coverage))]
+            tts::tts_stop,
+            #[cfg(not(coverage))]
+            tts::tts_list_voices,
+            // Agent commands (Windows only)
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            agent::start_agent_mode,
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            agent::stop_agent_mode,
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            agent::get_agent_status,
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            agent::confirm_agent_action,
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            agent::reject_agent_action,
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            agent::set_agent_provider,
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            agent::get_agent_provider,
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            computer_control::execute_action_command,
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            windows_screenshot::capture_silent_screenshot,
+            // Minibar commands (Windows only)
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            autostart::is_auto_start_enabled_command,
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            autostart::enable_auto_start_command,
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            autostart::disable_auto_start_command,
+            // Gateway commands
+            #[cfg(not(coverage))]
+            gateway::start_gateway,
+            #[cfg(not(coverage))]
+            gateway::stop_gateway,
+            #[cfg(not(coverage))]
+            gateway::get_gateway_status,
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            windows_focus::enter_minibar_command,
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            windows_focus::exit_minibar_command,
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            windows_focus::is_minibar_active_command,
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            enter_minibar_size,
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            exit_minibar_size,
+            // Settings window
+            open_settings_window,
+            // Config commands (TOML)
+            settings_commands::get_config,
+            settings_commands::set_config_field,
+            settings_commands::reset_config,
+            settings_commands::reload_config_from_disk,
+            settings_commands::get_corrupt_marker,
+            settings_commands::reveal_config_in_explorer,
+            // Model picker commands
+            models::get_model_picker_state,
+            models::set_active_model,
+            models::check_model_setup,
+            models::get_model_capabilities,
+            // Model warmup commands
             warmup::warm_up_model,
-            #[cfg(not(coverage))]
-            warmup::evict_model,
-            #[cfg(not(coverage))]
             warmup::get_loaded_model,
-            updater::commands::get_updater_state,
-            #[cfg(not(coverage))]
-            updater::commands::check_for_update,
-            #[cfg(not(coverage))]
-            updater::commands::install_update,
-            #[cfg(not(coverage))]
-            updater::commands::snooze_update_chat,
-            #[cfg(not(coverage))]
-            updater::commands::snooze_update_settings,
-            #[cfg(not(coverage))]
-            updater::commands::reset_and_relaunch_for_grant,
-            #[cfg(not(coverage))]
-            updater::commands::consume_pending_grant_resume
+            warmup::evict_model,
+            // Search pipeline
+            search::search_pipeline,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -1467,8 +900,6 @@ pub fn run() {
 
                     request_overlay_hide(app_handle);
                 } else if label == "settings" {
-                    // Hide instead of destroy so React state (active tab,
-                    // form values) survives close/reopen.
                     api.prevent_close();
                     if let Some(window) = app_handle.get_webview_window("settings") {
                         let _ = window.hide();
@@ -1531,7 +962,7 @@ mod tests {
 
     #[test]
     fn overlay_logical_dimensions() {
-        assert_eq!(OVERLAY_LOGICAL_WIDTH, 600.0);
-        assert_eq!(OVERLAY_LOGICAL_HEIGHT_COLLAPSED, 80.0);
+        assert_eq!(OVERLAY_LOGICAL_WIDTH, 650.0);
+        assert_eq!(OVERLAY_LOGICAL_HEIGHT_COLLAPSED, 60.0);
     }
 }

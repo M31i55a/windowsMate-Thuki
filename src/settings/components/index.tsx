@@ -1,9 +1,5 @@
 /**
  * Reusable form primitives for the Settings panel.
- *
- * Co-located in one file because each component is small and they all
- * share the same CSS module. Splitting them across N files would create
- * import noise without improving maintainability.
  */
 
 import {
@@ -16,7 +12,6 @@ import {
 } from 'react';
 
 import styles from '../../styles/settings.module.css';
-import { Tooltip } from '../../components/Tooltip';
 import { describeConfigError } from '../types';
 import type { ConfigError } from '../types';
 
@@ -42,22 +37,20 @@ export function SettingRow({
   helper,
   error,
   vertical = false,
-  tooltipPlacement = 'bottom',
   rightAlign = false,
   children,
 }: {
   label: string;
-  /** Long-form description rendered in a `?` tooltip next to the label. */
   helper?: string;
   error?: ConfigError | null;
   vertical?: boolean;
-  /** Tooltip placement for the `?` info button. Default `'bottom'`; use `'top'` near the bottom of the window to avoid clipping. */
-  tooltipPlacement?: 'top' | 'bottom';
-  /** When true, aligns the control to the far right of its container. */
   rightAlign?: boolean;
   children: ReactNode;
 }) {
   const labelId = useId();
+  const [tooltipVisible, setTooltipVisible] = useState(false);
+  const infoBtnRef = useRef<HTMLButtonElement>(null);
+
   return (
     <div
       className={vertical ? `${styles.row} ${styles.rowVertical}` : styles.row}
@@ -69,15 +62,24 @@ export function SettingRow({
           {label}
         </label>
         {helper ? (
-          <Tooltip label={helper} multiline placement={tooltipPlacement}>
-            <button
-              type="button"
-              className={styles.infoBtn}
-              aria-label={`About ${label}`}
+          <button
+            ref={infoBtnRef}
+            type="button"
+            className={styles.infoBtn}
+            aria-label={`About ${label}`}
+            onMouseEnter={() => setTooltipVisible(true)}
+            onMouseLeave={() => setTooltipVisible(false)}
+            onFocus={() => setTooltipVisible(true)}
+            onBlur={() => setTooltipVisible(false)}
+          >
+            ?
+            <div
+              className={`${styles.infoTooltip} ${tooltipVisible ? styles.infoTooltipVisible : ''}`}
+              role="tooltip"
             >
-              ?
-            </button>
-          </Tooltip>
+              {helper}
+            </div>
+          </button>
         ) : null}
       </div>
       <div
@@ -135,14 +137,12 @@ export function Textarea({
   placeholder,
   maxLength,
   ariaLabel,
-  rows = 4,
 }: {
   value: string;
   onChange: (next: string) => void;
   placeholder?: string;
   maxLength?: number;
   ariaLabel?: string;
-  rows?: number;
 }) {
   return (
     <textarea
@@ -154,7 +154,7 @@ export function Textarea({
       placeholder={placeholder}
       maxLength={maxLength}
       aria-label={ariaLabel}
-      rows={rows}
+      rows={4}
       spellCheck={false}
     />
   );
@@ -179,16 +179,9 @@ export function NumberSlider({
   onChange: (next: number) => void;
   ariaLabel?: string;
 }) {
-  // Track local value during a continuous drag so the displayed value
-  // updates per pixel, but only fire onChange on commit (mouse-up / blur).
-  // Otherwise every intermediate frame triggers a debounced save (which
-  // collapses to one anyway, but the UI thread does a lot of useless work).
   const [local, setLocal] = useState(value);
   const draggingRef = useRef(false);
   useEffect(() => {
-    // Sync external value into local state only when the user is not
-    // actively dragging; otherwise the prop update would clobber the
-    // in-progress drag position.
     if (!draggingRef.current) setLocal(value);
   }, [value]);
 
@@ -250,9 +243,6 @@ export function NumberStepper({
   onChange: (next: number) => void;
   ariaLabel?: string;
 }) {
-  // The buttons are disabled at the bounds (see `disabled` props below) so
-  // these handlers cannot be invoked when the next value would breach them;
-  // no runtime guard is needed.
   const decrement = () => onChange(value - step);
   const increment = () => onChange(value + step);
   return (
@@ -271,7 +261,7 @@ export function NumberStepper({
         disabled={value - step < min}
         aria-label="Decrease"
       >
-        −
+        -
       </button>
       <div className={styles.stepperValue}>{value}</div>
       <button
@@ -287,7 +277,7 @@ export function NumberStepper({
   );
 }
 
-// ─── Dropdown (single-select, controlled) ───────────────────────────────
+// ─── Dropdown ───────────────────────────────────────────────────────────
 
 export function Dropdown<T extends string>({
   value,
@@ -352,7 +342,7 @@ export function SavedPill({ visible }: { visible: boolean }) {
       aria-live="polite"
       role="status"
     >
-      ✓ Saved
+      Saved
     </div>
   );
 }
@@ -436,7 +426,7 @@ export function ResetSectionLink({
 }) {
   return (
     <button type="button" className={styles.resetLink} onClick={onClick}>
-      ↻ {label}
+      Reset {label}
     </button>
   );
 }

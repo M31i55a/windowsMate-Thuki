@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Thuki",
-  "version": "0.8.5",
-  "identifier": "com.quietnode.thuki",
+  "productName": "ThukiWin",
+  "version": "0.5.0",
+  "identifier": "com.thukiwin.thukiwin",
   "build": {
     "beforeDevCommand": "bun run frontend:dev",
     "devUrl": "http://localhost:1420",
@@ -13,48 +13,26 @@
     "windows": [
       {
         "label": "main",
-        "title": "Thuki",
-        "width": 600,
-        "height": 700,
+        "title": "ThukiWin",
+        "width": 650,
+        "height": 60,
         "resizable": true,
         "fullscreen": false,
-        "transparent": true,
+        "transparent": false,
         "decorations": false,
-        "alwaysOnTop": false,
+        "alwaysOnTop": true,
         "visible": false,
-        "dragDropEnabled": false
-      },
-      {
-        "label": "settings",
-        "title": "Thuki Settings",
-        "url": "index.html#/settings",
-        "width": 580,
-        "height": 520,
-        "minWidth": 580,
-        "minHeight": 280,
-        "maxWidth": 580,
-        "maxHeight": 700,
-        "resizable": false,
-        "fullscreen": false,
-        "transparent": true,
-        "decorations": false,
-        "alwaysOnTop": false,
-        "visible": false,
-        "skipTaskbar": false,
+        "skipTaskbar": true,
         "dragDropEnabled": false
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: asset: https://asset.localhost;",
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: asset: https://asset.localhost; media-src 'self' blob:;",
       "assetProtocol": {
         "enable": true,
-        "scope": [
-          "$APPDATA/images/**"
-        ]
+        "scope": ["$APPDATA/images/**"]
       },
-      "capabilities": [
-        "default"
-      ]
+      "capabilities": ["default"]
     }
   },
   "bundle": {
@@ -67,17 +45,5 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
-  },
-  "plugins": {
-    "updater": {
-      "active": false,
-      "endpoints": [
-        "https://github.com/quiet-node/thuki/releases/latest/download/latest.json"
-      ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUwQjZFQTM0M0I3Q0E1QzEKUldUQnBYdzdOT3EyVUdxMEFQTEhVdjFWbEZZbi84LzJZMVZheXB2WUs3eTBEMUhsdUR5SUVXVy8K",
-      "windows": {
-        "installMode": "passive"
-      }
-    }
   }
 }

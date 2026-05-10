@@ -13,23 +13,11 @@ use serde::{Deserialize, Serialize};
 use tauri::Manager;
 use tauri::State;
 
-use crate::commands::{ChatMessage, ConversationHistory};
-use crate::config::AppConfig;
+use crate::commands::{ChatMessage, ConversationHistory, ModelConfig, SystemPrompt};
 use crate::database;
-use crate::models::ActiveModelState;
 
 /// Thread-safe wrapper around the SQLite connection.
 pub struct Database(pub Mutex<Connection>);
-
-/// A single search result source preview sent by the frontend when saving
-/// an assistant message that was produced through the `/search` pipeline.
-/// Matches the Rust `SearchResultPreview` and frontend `SearchResultPreview`
-/// shape; kept as its own struct here to avoid a cross-module dependency.
-#[derive(Clone, Deserialize, Serialize)]
-pub struct SaveSearchSource {
-    pub title: String,
-    pub url: String,
-}
 
 /// Message payload sent from the frontend when saving a conversation.
 #[derive(Deserialize)]
@@ -39,19 +27,6 @@ pub struct SaveMessagePayload {
     pub quoted_text: Option<String>,
     pub image_paths: Option<Vec<String>>,
     pub thinking_content: Option<String>,
-    /// Sources footer for `/search` assistant messages. Serialised to JSON
-    /// before hitting the `messages.search_sources` column.
-    pub search_sources: Option<Vec<SaveSearchSource>>,
-    /// Already-serialised `Vec<SearchWarning>` JSON string for search turns.
-    /// Passed through verbatim to `messages.search_warnings`.
-    pub search_warnings: Option<String>,
-    /// Already-serialised `SearchMetadata` JSON string for search turns.
-    /// Passed through verbatim to `messages.search_metadata`.
-    pub search_metadata: Option<String>,
-    /// Slug of the Ollama model that produced this response. Frontend stamps
-    /// assistant payloads with the active model at generation time; `None`
-    /// for user payloads. Accepted as missing via serde Option default.
-    pub model_name: Option<String>,
 }
 
 /// Response returned when saving a conversation.
@@ -67,16 +42,10 @@ pub struct SaveConversationResponse {
 #[cfg_attr(not(coverage), tauri::command)]
 pub fn save_conversation(
     messages: Vec<SaveMessagePayload>,
+    model: String,
     db: State<'_, Database>,
-    active_model: State<'_, ActiveModelState>,
 ) -> Result<SaveConversationResponse, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    let model_slug = {
-        let guard = active_model.0.lock().map_err(|e| e.to_string())?;
-        guard.clone()
-    };
-    let model_slug =
-        model_slug.ok_or_else(|| "No model selected; cannot save conversation.".to_string())?;
 
     // Use the first user message (truncated) as the initial title placeholder.
     let placeholder_title = messages.iter().find(|m| m.role == "user").map(|m| {
@@ -97,7 +66,7 @@ pub fn save_conversation(
     });
 
     let conversation_id =
-        database::create_conversation(&conn, placeholder_title.as_deref(), &model_slug)
+        database::create_conversation(&conn, placeholder_title.as_deref(), &model)
             .map_err(|e| e.to_string())?;
 
     let batch: Vec<database::MessageBatchRow> = messages
@@ -106,20 +75,12 @@ pub fn save_conversation(
             let image_json = m.image_paths.filter(|v| !v.is_empty()).map(|v| {
                 serde_json::to_string(&v).expect("Vec<String> serialization is infallible")
             });
-            let sources_json = m.search_sources.filter(|v| !v.is_empty()).map(|v| {
-                serde_json::to_string(&v)
-                    .expect("Vec<SaveSearchSource> serialization is infallible")
-            });
             (
                 m.role,
                 m.content,
                 m.quoted_text,
                 image_json,
                 m.thinking_content,
-                sources_json,
-                m.search_warnings,
-                m.search_metadata,
-                m.model_name,
             )
         })
         .collect();
@@ -132,7 +93,6 @@ pub fn save_conversation(
 /// Appends a single message to an already-saved conversation.
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg_attr(not(coverage), tauri::command)]
-#[allow(clippy::too_many_arguments)]
 pub fn persist_message(
     conversation_id: String,
     role: String,
@@ -140,19 +100,12 @@ pub fn persist_message(
     quoted_text: Option<String>,
     image_paths: Option<Vec<String>>,
     thinking_content: Option<String>,
-    search_sources: Option<Vec<SaveSearchSource>>,
-    search_warnings: Option<String>,
-    search_metadata: Option<String>,
-    model_name: Option<String>,
     db: State<'_, Database>,
 ) -> Result<(), String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     let image_json = image_paths
         .filter(|v| !v.is_empty())
         .map(|v| serde_json::to_string(&v).expect("Vec<String> serialization is infallible"));
-    let sources_json = search_sources.filter(|v| !v.is_empty()).map(|v| {
-        serde_json::to_string(&v).expect("Vec<SaveSearchSource> serialization is infallible")
-    });
     database::insert_message(
         &conn,
         &conversation_id,
@@ -161,10 +114,6 @@ pub fn persist_message(
         quoted_text.as_deref(),
         image_json.as_deref(),
         thinking_content.as_deref(),
-        sources_json.as_deref(),
-        search_warnings.as_deref(),
-        search_metadata.as_deref(),
-        model_name.as_deref(),
     )
     .map_err(|e| e.to_string())?;
     Ok(())
@@ -193,7 +142,7 @@ pub fn load_conversation(
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     let persisted = database::load_messages(&conn, &conversation_id).map_err(|e| e.to_string())?;
 
-    // Bump the epoch before replacing messages - same invariant as
+    // Bump the epoch before replacing messages — same invariant as
     // `reset_conversation`. This prevents any in-flight `ask_ollama`
     // stream from appending stale tokens into the freshly loaded history.
     history
@@ -235,7 +184,7 @@ pub fn delete_conversation(
 
     database::delete_conversation(&conn, &conversation_id).map_err(|e| e.to_string())?;
 
-    // Best-effort file cleanup - don't fail the command if a file is missing.
+    // Best-effort file cleanup — don't fail the command if a file is missing.
     let base_dir = app_handle
         .path()
         .app_data_dir()
@@ -248,19 +197,19 @@ pub fn delete_conversation(
 }
 
 /// Generates a short AI title for a saved conversation by asking Ollama.
-/// Runs as a fire-and-forget background task - the frontend polls or
+/// Runs as a fire-and-forget background task — the frontend polls or
 /// refreshes the list to see the updated title.
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg_attr(not(coverage), tauri::command)]
 pub async fn generate_title(
     conversation_id: String,
     messages: Vec<SaveMessagePayload>,
-    model: String,
     db: State<'_, Database>,
     client: State<'_, reqwest::Client>,
-    app_config: State<'_, parking_lot::RwLock<AppConfig>>,
+    system_prompt: State<'_, SystemPrompt>,
+    model_config: State<'_, ModelConfig>,
+    ollama_url: State<'_, crate::commands::OllamaUrl>,
 ) -> Result<(), String> {
-    let app_config = app_config.read().clone();
     // Build a condensed context for title generation.
     let mut context = String::new();
     for msg in &messages {
@@ -284,7 +233,7 @@ pub async fn generate_title(
     let title_messages = vec![
         ChatMessage {
             role: "system".to_string(),
-            content: app_config.prompt.resolved_system.clone(),
+            content: system_prompt.0.clone(),
             images: None,
         },
         ChatMessage {
@@ -294,21 +243,19 @@ pub async fn generate_title(
         },
     ];
 
+    let url = ollama_url.0.lock().unwrap().clone();
     let endpoint = format!(
         "{}/api/chat",
-        app_config.inference.ollama_url.trim_end_matches('/')
+        url.trim_end_matches('/')
     );
 
+    let active_model = model_config.active.lock().unwrap().clone();
     let cancel_token = tokio_util::sync::CancellationToken::new();
     let accumulated = crate::commands::stream_ollama_chat(
-        crate::commands::OllamaChatParams {
-            endpoint,
-            model,
-            messages: title_messages,
-            think: false,
-            keep_alive: None,
-            num_ctx: app_config.inference.num_ctx,
-        },
+        &endpoint,
+        &active_model,
+        title_messages,
+        false,
         &client,
         cancel_token,
         |_| {}, // No per-chunk side effects; we use the accumulated return value.
@@ -356,10 +303,6 @@ mod tests {
                 quoted_text: None,
                 image_paths: Some(vec!["/tmp/img.jpg".to_string()]),
                 thinking_content: None,
-                search_sources: None,
-                search_warnings: None,
-                search_metadata: None,
-                model_name: None,
             },
             SaveMessagePayload {
                 role: "assistant".to_string(),
@@ -367,21 +310,6 @@ mod tests {
                 quoted_text: None,
                 image_paths: None,
                 thinking_content: Some("Let me think about Rust...".to_string()),
-                search_sources: Some(vec![
-                    SaveSearchSource {
-                        title: "Rust docs".into(),
-                        url: "https://doc.rust-lang.org".into(),
-                    },
-                    SaveSearchSource {
-                        title: "Tokio".into(),
-                        url: "https://tokio.rs".into(),
-                    },
-                ]),
-                search_warnings: Some(r#"["reader_unavailable"]"#.to_string()),
-                search_metadata: Some(
-                    r#"{"iterations":[],"total_duration_ms":10,"retries_performed":0}"#.to_string(),
-                ),
-                model_name: Some("gemma4:e2b".to_string()),
             },
         ];
 
@@ -391,9 +319,12 @@ mod tests {
             .find(|m| m.role == "user")
             .map(|m| m.content.trim().to_string());
 
-        let conversation_id =
-            database::create_conversation(&conn, placeholder_title.as_deref(), "gemma4:e2b")
-                .unwrap();
+        let conversation_id = database::create_conversation(
+            &conn,
+            placeholder_title.as_deref(),
+            crate::commands::DEFAULT_MODEL_NAME,
+        )
+        .unwrap();
 
         let batch: Vec<database::MessageBatchRow> = messages
             .into_iter()
@@ -401,20 +332,12 @@ mod tests {
                 let image_json = m.image_paths.filter(|v| !v.is_empty()).map(|v| {
                     serde_json::to_string(&v).expect("Vec<String> serialization is infallible")
                 });
-                let sources_json = m.search_sources.filter(|v| !v.is_empty()).map(|v| {
-                    serde_json::to_string(&v)
-                        .expect("Vec<SaveSearchSource> serialization is infallible")
-                });
                 (
                     m.role,
                     m.content,
                     m.quoted_text,
                     image_json,
                     m.thinking_content,
-                    sources_json,
-                    m.search_warnings,
-                    m.search_metadata,
-                    m.model_name,
                 )
             })
             .collect();
@@ -431,29 +354,12 @@ mod tests {
             Some(r#"["/tmp/img.jpg"]"#)
         );
         assert_eq!(loaded[0].thinking_content, None);
-        assert!(loaded[0].search_sources.is_none());
         assert_eq!(loaded[1].role, "assistant");
         assert!(loaded[1].image_paths.is_none());
         assert_eq!(
             loaded[1].thinking_content.as_deref(),
             Some("Let me think about Rust...")
         );
-        let sources_json = loaded[1].search_sources.as_deref().unwrap();
-        assert!(sources_json.contains("Rust docs"));
-        assert!(sources_json.contains("https://tokio.rs"));
-        assert_eq!(
-            loaded[1].search_warnings.as_deref(),
-            Some(r#"["reader_unavailable"]"#)
-        );
-        assert!(loaded[1]
-            .search_metadata
-            .as_deref()
-            .unwrap()
-            .contains("total_duration_ms"));
-        assert!(loaded[0].search_warnings.is_none());
-        assert!(loaded[0].search_metadata.is_none());
-        assert!(loaded[0].model_name.is_none());
-        assert_eq!(loaded[1].model_name.as_deref(), Some("gemma4:e2b"));
     }
 
     #[test]

@@ -31,7 +31,7 @@ use tokio_util::sync::CancellationToken;
 use crate::config::defaults::DEFAULT_READER_RETRY_DELAY_MS;
 use crate::search::chunker::Page;
 use crate::search::errors::{is_transient_connect_error, retry_once};
-use crate::trace::{BoundRecorder, ReaderUrlOutcome, RecorderEvent};
+use crate::search::recorder::{PipelineRecorder, ReaderUrlOutcome, RecorderEvent};
 
 /// Errors callers must handle.
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -187,15 +187,14 @@ impl ReaderClient {
     ///
     /// `recorder` receives a single [`RecorderEvent::ReaderBatch`] when the
     /// batch finishes (successfully or via error), capturing per-URL outcomes
-    /// and extracted text. The recorder is a [`crate::trace::BoundRecorder`]
-    /// already bound to the active conversation id; when tracing is off it
-    /// is backed by a [`crate::trace::NoopRecorder`] (constant-time call).
+    /// and extracted text. Pass [`crate::search::recorder::NoopRecorder`]
+    /// when tracing is off; the noop is a constant-time call.
     pub async fn fetch_batch_with_progress(
         &self,
         urls: &[String],
         cancel: &CancellationToken,
         on_url_fetched: &(dyn Fn(String) + Send + Sync),
-        recorder: &Arc<BoundRecorder>,
+        recorder: &Arc<dyn PipelineRecorder>,
     ) -> Result<ReaderBatchResult, ReaderError> {
         if urls.is_empty() {
             return Ok(ReaderBatchResult::default());
@@ -376,17 +375,15 @@ mod tests {
     use super::*;
     use crate::config::defaults::DEFAULT_READER_PER_URL_TIMEOUT_S;
     use crate::search::config::TEST_READER_BATCH_TIMEOUT_S;
-    use crate::trace::ConversationId;
+    use crate::search::recorder::NoopRecorder;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    /// Local helper: a noop recorder bound to a sentinel conversation id,
+    /// Local helper: a noop recorder wrapped in `Arc<dyn PipelineRecorder>`,
     /// used everywhere this module exercises `fetch_batch_with_progress`
     /// without asserting on trace output.
-    fn noop_recorder() -> Arc<BoundRecorder> {
-        Arc::new(BoundRecorder::noop_for(ConversationId::new(
-            "test-conv-reader",
-        )))
+    fn noop_recorder() -> Arc<dyn PipelineRecorder> {
+        Arc::new(NoopRecorder)
     }
 
     async fn client_for(server: &MockServer) -> ReaderClient {
