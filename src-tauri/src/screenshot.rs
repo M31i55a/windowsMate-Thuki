@@ -23,10 +23,10 @@ use std::path::PathBuf;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use tauri::Manager;
 
-/// Returns a unique `/tmp/<uuid>-thuki.png` path for a single screenshot capture.
+/// Returns a unique temp path for a single screenshot capture.
 /// A new UUID is generated on every call, preventing collisions.
 pub fn temp_screenshot_path() -> PathBuf {
-    PathBuf::from(format!("/tmp/{}-thuki.png", uuid::Uuid::new_v4()))
+    std::env::temp_dir().join(format!("{}-thuki.png", uuid::Uuid::new_v4()))
 }
 
 /// Encodes raw bytes to a standard base64 string for IPC transfer.
@@ -52,7 +52,7 @@ pub fn process_screenshot_result(path: &PathBuf) -> Result<Option<String>, Strin
 
 /// Captures a user-selected screen region and returns it as base64-encoded PNG.
 ///
-/// Flow:
+/// Flow (macOS):
 /// 1. Hide the main window (so it doesn't appear in the screenshot).
 /// 2. Sleep 200 ms to let the window fully disappear before the crosshair appears.
 /// 3. Run `screencapture -i -x <path>`, which blocks until the user selects a region
@@ -60,14 +60,20 @@ pub fn process_screenshot_result(path: &PathBuf) -> Result<Option<String>, Strin
 /// 4. Re-show the window via `show_and_make_key()` so the NSPanel becomes the
 ///    key window and the WebView textarea receives keyboard focus reliably.
 /// 5. Delegate result handling to `process_screenshot_result`.
+///
+/// Flow (Windows / Linux):
+/// Hides the window, captures the primary screen via the `screenshots` crate,
+/// re-shows the window, and returns the image as base64. Interactive region
+/// selection is not available on non-macOS platforms.
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg_attr(not(coverage), tauri::command)]
 pub async fn capture_screenshot_command(
     app_handle: tauri::AppHandle,
 ) -> Result<Option<String>, String> {
     // Hide the window on the main thread. Tauri commands run on a tokio pool
-    // thread, but AppKit window APIs (hide, show, makeKey) must only be called
-    // from the main thread to avoid crashes.
+    // thread, but window APIs (hide, show) must only be called from the main
+    // thread on AppKit; on Windows Tauri also dispatches these safely via the
+    // main thread.
     let hide_handle = app_handle.clone();
     app_handle
         .run_on_main_thread(move || {
@@ -79,34 +85,82 @@ pub async fn capture_screenshot_command(
 
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-    let path = temp_screenshot_path();
-    let path_str = path
-        .to_str()
-        .ok_or_else(|| "temp path is not valid UTF-8".to_string())?;
+    #[cfg(target_os = "macos")]
+    {
+        let path = temp_screenshot_path();
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| "temp path is not valid UTF-8".to_string())?;
 
-    // Ignore exit status: user cancellation exits 0 but creates no file.
-    let _ = std::process::Command::new("screencapture")
-        .args(["-i", "-x", path_str])
-        .status();
+        // Ignore exit status: user cancellation exits 0 but creates no file.
+        let _ = std::process::Command::new("screencapture")
+            .args(["-i", "-x", path_str])
+            .status();
 
-    // Re-show on the main thread via show_and_make_key() so the NSPanel
-    // becomes the key window, guaranteeing the WebView textarea receives
-    // keyboard focus (mirrors the pattern in lib.rs).
-    let show_handle = app_handle.clone();
-    let _ = app_handle.run_on_main_thread(move || {
-        use tauri_nspanel::ManagerExt;
-        match show_handle.get_webview_panel("main") {
-            Ok(panel) => panel.show_and_make_key(),
-            Err(_) => {
-                if let Some(w) = show_handle.get_webview_window("main") {
-                    let _ = w.show();
-                    let _ = w.set_focus();
+        // Re-show on the main thread via show_and_make_key() so the NSPanel
+        // becomes the key window, guaranteeing the WebView textarea receives
+        // keyboard focus (mirrors the pattern in lib.rs).
+        let show_handle = app_handle.clone();
+        let _ = app_handle.run_on_main_thread(move || {
+            use tauri_nspanel::ManagerExt;
+            match show_handle.get_webview_panel("main") {
+                Ok(panel) => panel.show_and_make_key(),
+                Err(_) => {
+                    if let Some(w) = show_handle.get_webview_window("main") {
+                        let _ = w.show();
+                        let _ = w.set_focus();
+                    }
                 }
             }
-        }
-    });
+        });
 
-    process_screenshot_result(&path)
+        return process_screenshot_result(&path);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        // On Windows / Linux: capture the primary screen via the screenshots crate.
+        let result = tokio::task::spawn_blocking(|| {
+            use screenshots::Screen;
+
+            let screens = Screen::all().map_err(|e| format!("failed to enumerate screens: {e}"))?;
+            let primary = screens
+                .into_iter()
+                .next()
+                .ok_or_else(|| "no screens found".to_string())?;
+
+            let image = primary
+                .capture()
+                .map_err(|e| format!("screen capture failed: {e}"))?;
+
+            let mut png: Vec<u8> = Vec::new();
+            let buf = image::ImageBuffer::<image::Rgba<u8>, Vec<u8>>::from_raw(
+                image.width(),
+                image.height(),
+                image.into_raw(),
+            )
+            .ok_or_else(|| "failed to create image buffer".to_string())?;
+            let dynamic = image::DynamicImage::ImageRgba8(buf);
+            dynamic
+                .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+                .map_err(|e| format!("failed to encode screenshot as PNG: {e}"))?;
+
+            Ok::<_, String>(encode_as_base64(&png))
+        })
+        .await
+        .map_err(|e| format!("screenshot task failed: {e}"))??;
+
+        // Re-show the window.
+        let show_handle = app_handle.clone();
+        let _ = app_handle.run_on_main_thread(move || {
+            if let Some(w) = show_handle.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        });
+
+        Ok(Some(result))
+    }
 }
 
 // ─── Full-screen silent capture (macOS) ────────────────────────────────────
@@ -384,10 +438,29 @@ fn capture_full_screen_pixels() -> Result<(u32, u32, Vec<u8>), String> {
     capture_full_screen_raw()
 }
 
-/// Non-macOS stub: full-screen capture is macOS-only.
+/// Non-macOS full-screen capture using the `screenshots` crate.
+/// Captures the primary display and returns raw RGBA pixel bytes.
 #[cfg(not(target_os = "macos"))]
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn capture_full_screen_pixels() -> Result<(u32, u32, Vec<u8>), String> {
-    Err("full-screen capture is only supported on macOS".to_string())
+    use screenshots::Screen;
+
+    let screens = Screen::all().map_err(|e| format!("failed to enumerate screens: {e}"))?;
+    let primary = screens
+        .into_iter()
+        .next()
+        .ok_or_else(|| "no screens found".to_string())?;
+
+    let image = primary
+        .capture()
+        .map_err(|e| format!("screen capture failed: {e}"))?;
+
+    let width = image.width();
+    let height = image.height();
+    // `screenshots::Image::into_raw()` returns RGBA bytes on all platforms.
+    let rgba = image.into_raw();
+
+    Ok((width, height, rgba))
 }
 
 /// Tauri command: silently captures the full screen (excluding Thuki's own
@@ -464,7 +537,7 @@ mod tests {
 
     #[test]
     fn process_screenshot_result_returns_none_when_file_missing() {
-        let path = PathBuf::from(format!("/tmp/{}-missing.png", uuid::Uuid::new_v4()));
+        let path = std::env::temp_dir().join(format!("{}-missing.png", uuid::Uuid::new_v4()));
         assert_eq!(process_screenshot_result(&path).unwrap(), None);
     }
 
@@ -496,7 +569,12 @@ mod tests {
     fn temp_screenshot_path_is_in_tmp_and_ends_with_png() {
         let path = temp_screenshot_path();
         let s = path.to_str().unwrap();
-        assert!(s.starts_with("/tmp/"), "expected /tmp/ prefix, got: {s}");
+        let tmp = std::env::temp_dir();
+        let tmp_str = tmp.to_str().unwrap();
+        assert!(
+            s.starts_with(tmp_str),
+            "expected temp dir prefix {tmp_str:?}, got: {s}"
+        );
         assert!(
             s.ends_with("-thuki.png"),
             "expected -thuki.png suffix, got: {s}"

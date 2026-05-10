@@ -63,7 +63,7 @@ export function renderCommandsMarkdown(): string {
     '2. **No highlighted text + typed text after command:** typed text is the input',
     '3. **Both present:** highlighted text is the primary input; typed text is appended as an additional instruction',
     '',
-    'This means you can highlight text anywhere on screen, summon Thuki with double-tap Control, type a command, and hit Enter without retyping the selected content.',
+    'This means you can highlight text anywhere on screen, summon Thuki with Ctrl+Space, type a command, and hit Enter without retyping the selected content.',,
     '',
     ...COMMANDS.flatMap((command, index) => {
       const section = renderDocsSection(command);

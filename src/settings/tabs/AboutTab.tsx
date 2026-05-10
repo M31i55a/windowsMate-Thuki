@@ -282,7 +282,7 @@ export function AboutTab({ onSaved, onReload }: AboutTabProps) {
               ) : null}
             </div>
             <div className={styles.rowHelper}>
-              Required for the global double-tap-Control hotkey.
+              Required for the global Ctrl+Space hotkey.
             </div>
           </div>
         </div>
@@ -326,7 +326,7 @@ export function AboutTab({ onSaved, onReload }: AboutTabProps) {
             className={`${styles.button} ${styles.buttonGhost}`}
             onClick={() => void invoke('reveal_config_in_finder')}
           >
-            Reveal Thuki app data
+            Reveal app data folder
           </button>
           <Tooltip
             label="Re-read config.toml from disk and refresh this window. Use after editing the file by hand outside Thuki."

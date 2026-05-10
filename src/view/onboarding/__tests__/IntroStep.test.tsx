@@ -22,10 +22,9 @@ describe('IntroStep', () => {
 
   it('renders all 5 facts', () => {
     render(<IntroStep onComplete={vi.fn()} />);
-    expect(screen.getByText('Double-tap')).toBeInTheDocument();
     expect(screen.getByText('to summon')).toBeInTheDocument();
     expect(
-      screen.getByText('Select text, then double-tap'),
+      screen.getByText('Select text, then press'),
     ).toBeInTheDocument();
     expect(screen.getByText('Drop in any image')).toBeInTheDocument();
     expect(screen.getByText('for commands')).toBeInTheDocument();

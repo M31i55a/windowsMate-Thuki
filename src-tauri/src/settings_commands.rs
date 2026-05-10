@@ -322,20 +322,41 @@ pub fn get_corrupt_marker(app: AppHandle) -> Result<Option<CorruptMarker>, Confi
     Ok(config::consume_corrupt_marker(&dir))
 }
 
-/// Opens Finder with the user's `config.toml` selected.
+/// Opens the system file manager with the user's `config.toml` selected.
 ///
-/// Thin FFI wrapper (excluded from coverage) over `open -R`, which is the
-/// macOS-native "reveal in Finder" affordance.
+/// On macOS uses `open -R` (Finder). On Windows uses `explorer /select,<path>`.
+/// On other platforms opens the parent directory.
 #[tauri::command]
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn reveal_config_in_finder(app: AppHandle) -> Result<(), String> {
     let path = config_path(&app).map_err(|e| e.to_string())?;
-    std::process::Command::new("open")
-        .arg("-R")
-        .arg(&path)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(&path)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let path_str = path.to_string_lossy();
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{path_str}"))
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let parent = path.parent().unwrap_or(&path);
+        std::process::Command::new("xdg-open")
+            .arg(parent)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
 }
 
 // ─── Document I/O + JSON→TOML coercion (testable internals) ─────────────────

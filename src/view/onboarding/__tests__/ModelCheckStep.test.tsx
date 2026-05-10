@@ -245,7 +245,7 @@ describe('ModelCheckStep', () => {
     await act(async () => {});
 
     expect(
-      screen.getByText('curl -fsSL https://ollama.com/install.sh | sh'),
+      screen.getByText('winget install Ollama.Ollama'),
     ).toBeInTheDocument();
 
     await act(async () => {
@@ -253,13 +253,13 @@ describe('ModelCheckStep', () => {
         screen.getByRole('button', { name: 'Already Installed?' }),
       );
     });
-    expect(screen.getByText('open -a Ollama')).toBeInTheDocument();
+    expect(screen.getByText('ollama serve')).toBeInTheDocument();
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Install Ollama' }));
     });
     expect(
-      screen.getByText('curl -fsSL https://ollama.com/install.sh | sh'),
+      screen.getByText('winget install Ollama.Ollama'),
     ).toBeInTheDocument();
   });
 
@@ -279,7 +279,7 @@ describe('ModelCheckStep', () => {
     await act(async () => {
       fireEvent.click(screen.getByLabelText('Copy already installed? command'));
     });
-    expect(writeText).toHaveBeenCalledWith('open -a Ollama');
+    expect(writeText).toHaveBeenCalledWith('ollama serve');
   });
 
   it('lights up the active tab with the brand orange', async () => {

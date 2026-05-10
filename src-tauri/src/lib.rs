@@ -41,8 +41,11 @@ use std::sync::{
 
 use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Listener, Manager, RunEvent, WebviewWindow,
+    Emitter, Listener, Manager, RunEvent,
 };
+
+#[cfg(target_os = "macos")]
+use tauri::WebviewWindow;
 
 #[cfg(target_os = "macos")]
 use tauri::ActivationPolicy;
@@ -601,6 +604,38 @@ fn notify_frontend_ready(app_handle: tauri::AppHandle, db: tauri::State<history:
                 return;
             }
         }
+        #[cfg(not(target_os = "macos"))]
+        {
+            // On Windows / Linux: no Accessibility or Screen Recording
+            // permissions. Only run the model-check gate. If onboarding is
+            // Complete, skip directly to the overlay.
+            if let Ok(conn) = db.0.lock() {
+                let stage =
+                    onboarding::get_stage(&conn).unwrap_or(onboarding::OnboardingStage::ModelCheck);
+                match stage {
+                    onboarding::OnboardingStage::Complete => {
+                        // Fall through to show the overlay.
+                    }
+                    onboarding::OnboardingStage::Intro => {
+                        // Model check passed but user hasn't clicked "Get Started" yet.
+                        drop(conn);
+                        show_onboarding_window(&app_handle, onboarding::OnboardingStage::Intro);
+                        return;
+                    }
+                    _ => {
+                        // First launch or mid-onboarding: show the model check gate.
+                        let _ =
+                            onboarding::set_stage(&conn, &onboarding::OnboardingStage::ModelCheck);
+                        drop(conn);
+                        show_onboarding_window(
+                            &app_handle,
+                            onboarding::OnboardingStage::ModelCheck,
+                        );
+                        return;
+                    }
+                }
+            }
+        }
         show_overlay(&app_handle, crate::context::ActivationContext::empty());
     }
 }
@@ -806,6 +841,24 @@ struct OnboardingPayload {
     stage: onboarding::OnboardingStage,
 }
 
+/// Non-macOS onboarding window: resizes main window, centers it, makes it
+/// visible and emits `thuki://onboarding` so the frontend switches to
+/// `OnboardingView`. On Windows / Linux there is no NSPanel, so we use the
+/// regular Tauri WebviewWindow API.
+#[cfg(not(target_os = "macos"))]
+fn show_onboarding_window(app_handle: &tauri::AppHandle, stage: onboarding::OnboardingStage) {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize::new(
+            ONBOARDING_LOGICAL_WIDTH,
+            ONBOARDING_LOGICAL_HEIGHT,
+        )));
+        let _ = window.center();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+    let _ = app_handle.emit(ONBOARDING_EVENT, OnboardingPayload { stage });
+}
+
 // ─── Image cleanup ──────────────────────────────────────────────────────────
 
 /// Interval between periodic orphaned-image cleanup sweeps.
@@ -894,10 +947,16 @@ fn build_tray_menu<R: tauri::Runtime>(
 ) -> tauri::Result<tauri::menu::Menu<R>> {
     use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 
+    #[cfg(target_os = "macos")]
+    let (settings_accel, quit_accel): (Option<&str>, Option<&str>) = (Some("Cmd+,"), Some("Cmd+Q"));
+    #[cfg(not(target_os = "macos"))]
+    let (settings_accel, quit_accel): (Option<&str>, Option<&str>) =
+        (Some("Ctrl+,"), Some("Ctrl+Q"));
+
     let show = MenuItem::with_id(app, "show", "Open Thuki", true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", "Settings…", true, Some("Cmd+,"))?;
+    let settings = MenuItem::with_id(app, "settings", "Settings…", true, settings_accel)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Thuki", true, Some("Cmd+Q"))?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Thuki", true, quit_accel)?;
 
     if let Some(version) = update_version {
         let label = format!("Update Thuki to v{version}");
@@ -958,6 +1017,11 @@ pub fn run() {
     #[cfg(target_os = "macos")]
     {
         builder = builder.plugin(tauri_nspanel::init());
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
     }
 
     builder
@@ -1069,6 +1133,36 @@ pub fn run() {
                 app.manage(activator);
             }
 
+            // ── Global shortcut (non-macOS) ───────────────────────────
+            // On Windows / Linux, register Ctrl+Space as the toggle hotkey.
+            // The macOS path uses a CoreGraphics event tap instead (activator.rs).
+            #[cfg(not(target_os = "macos"))]
+            {
+                use tauri_plugin_global_shortcut::{
+                    Code, GlobalShortcutExt, Modifiers, ShortcutState,
+                };
+                let shortcut = tauri_plugin_global_shortcut::Shortcut::new(
+                    Some(Modifiers::CONTROL),
+                    Code::Space,
+                );
+                let shortcut_handle = app.handle().clone();
+                if let Err(e) = app.handle().global_shortcut().on_shortcut(
+                    shortcut,
+                    move |_app, _shortcut, event| {
+                        if event.state() == ShortcutState::Pressed {
+                            toggle_overlay(
+                                &shortcut_handle,
+                                crate::context::ActivationContext::empty(),
+                            );
+                        }
+                    },
+                ) {
+                    eprintln!(
+                        "thuki: [windows] failed to register global shortcut Ctrl+Space: {e}"
+                    );
+                }
+            }
+
             // ── Persistent HTTP client ────────────────────────────────
             app.manage(reqwest::Client::new());
             let warmup_handle = app.handle().clone();
@@ -1116,23 +1210,27 @@ pub fn run() {
                 // macOS keeps for the previous binary's code signature.
                 // Without this, System Settings shows the toggle on but
                 // the new binary cannot actually use the permission.
-                let did_upgrade = updater::tcc_reset::should_reset_for_upgrade(
-                    sidecar.last_launched_version.as_deref(),
-                    &running_version,
-                );
-                if did_upgrade {
-                    updater::tcc_reset::tccutil_reset(&app.config().identifier);
-                    // Persist that the running version's csreq is what
-                    // owns any TCC entries on disk now (or there are no
-                    // entries, which is also fine). The click-time grant
-                    // flow consults this so the user's first grant click
-                    // after an upgrade does not trigger a second
-                    // reset+relaunch on top of the one we are about to
-                    // schedule below. Held in the sidecar (not memory)
-                    // because the relaunch wipes any in-process state
-                    // before the user could ever click.
-                    sidecar.last_reset_for_version = Some(running_version.clone());
-                }
+                #[cfg(target_os = "macos")]
+                let did_upgrade = {
+                    let du = updater::tcc_reset::should_reset_for_upgrade(
+                        sidecar.last_launched_version.as_deref(),
+                        &running_version,
+                    );
+                    if du {
+                        updater::tcc_reset::tccutil_reset(&app.config().identifier);
+                        // Persist that the running version's csreq is what
+                        // owns any TCC entries on disk now (or there are no
+                        // entries, which is also fine). The click-time grant
+                        // flow consults this so the user's first grant click
+                        // after an upgrade does not trigger a second
+                        // reset+relaunch on top of the one we are about to
+                        // schedule below. Held in the sidecar (not memory)
+                        // because the relaunch wipes any in-process state
+                        // before the user could ever click.
+                        sidecar.last_reset_for_version = Some(running_version.clone());
+                    }
+                    du
+                };
 
                 // Restore persisted snooze flags into the live state.
                 updater_state.set_settings_snooze(sidecar.settings_snoozed_until);
@@ -1172,6 +1270,7 @@ pub fn run() {
                 // registers it normally on the first AX call from
                 // onboarding. The restart is deferred so Tauri finishes
                 // wiring up the rest of `setup` before we tear it down.
+                #[cfg(target_os = "macos")]
                 if did_upgrade {
                     let app_handle = app.handle().clone();
                     tauri::async_runtime::spawn(async move {

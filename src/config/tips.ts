@@ -12,7 +12,7 @@ export const TIPS: readonly Tip[] = [
   'Highlight text in any app before summoning Thuki to include it as context',
   '/think makes Thuki reason step by step before answering, great for hard questions',
   '/search pulls live web results into the chat so answers stay current',
-  '⌘W or Esc hides the window; Thuki keeps running in the background',
+  'Ctrl+W or Esc hides the window; Thuki keeps running in the background',
   'Drop an image onto the bar to attach it and ask questions about what you see',
   'Paste images from your clipboard directly; no need to save to disk first',
   'Click the chip icon to switch between any model you have installed in Ollama',

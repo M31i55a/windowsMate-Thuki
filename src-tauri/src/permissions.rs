@@ -158,6 +158,65 @@ pub fn quit_and_relaunch(app_handle: tauri::AppHandle, db: tauri::State<crate::h
     app_handle.restart();
 }
 
+// ─── Non-macOS stubs ─────────────────────────────────────────────────────────
+// On Windows and Linux, there is no Accessibility or Screen Recording
+// permission system equivalent. All permission checks return `true` and all
+// settings-opening commands are no-ops, so the onboarding flow skips the
+// permissions step on these platforms.
+
+#[tauri::command]
+#[cfg(not(target_os = "macos"))]
+pub fn check_accessibility_permission() -> bool {
+    true
+}
+
+#[tauri::command]
+#[cfg(not(target_os = "macos"))]
+pub fn open_accessibility_settings() -> Result<(), String> {
+    Ok(())
+}
+
+#[tauri::command]
+#[cfg(not(target_os = "macos"))]
+pub fn check_screen_recording_permission() -> bool {
+    true
+}
+
+#[tauri::command]
+#[cfg(not(target_os = "macos"))]
+pub fn open_screen_recording_settings() -> Result<(), String> {
+    Ok(())
+}
+
+#[tauri::command]
+#[cfg(not(target_os = "macos"))]
+pub fn request_screen_recording_access() {}
+
+#[tauri::command]
+#[cfg(not(target_os = "macos"))]
+pub fn check_screen_recording_tcc_granted() -> bool {
+    true
+}
+
+#[tauri::command]
+#[cfg(not(target_os = "macos"))]
+pub fn quit_and_relaunch(app_handle: tauri::AppHandle, db: tauri::State<crate::history::Database>) {
+    if let Ok(conn) = db.0.lock() {
+        let _ = crate::onboarding::set_stage(&conn, &crate::onboarding::OnboardingStage::Intro);
+    }
+    app_handle.restart();
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn is_accessibility_granted() -> bool {
+    true
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn is_screen_recording_granted() -> bool {
+    true
+}
+
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

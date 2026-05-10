@@ -61,12 +61,12 @@ const INSTALL_TABS: InstallTab[] = [
   {
     id: 'install',
     label: 'Install Ollama',
-    command: 'curl -fsSL https://ollama.com/install.sh | sh',
+    command: 'winget install Ollama.Ollama',
   },
   {
     id: 'already-installed',
     label: 'Already Installed?',
-    command: 'open -a Ollama',
+    command: 'ollama serve',
   },
 ];
 
