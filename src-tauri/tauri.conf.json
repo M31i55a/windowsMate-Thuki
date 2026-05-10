@@ -55,8 +55,7 @@
       "capabilities": [
         "default"
       ]
-    },
-    "macOSPrivateApi": true
+    }
   },
   "bundle": {
     "active": true,
@@ -71,7 +70,7 @@
   },
   "plugins": {
     "updater": {
-      "active": true,
+      "active": false,
       "endpoints": [
         "https://github.com/quiet-node/thuki/releases/latest/download/latest.json"
       ],

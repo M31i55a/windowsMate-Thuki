@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { LoadingStage } from './LoadingStage';
@@ -29,6 +29,20 @@ export function ThinkingBlock({
   const [isExpanded, setIsExpanded] = useState(false);
   const hasThinkingContent = Boolean(thinkingContent?.trim());
 
+  // Memoize the expensive regex + trim so it only re-runs when thinkingContent
+  // changes, not on every re-render caused by other prop changes (e.g. isThinking
+  // toggling when the first regular Token arrives after a long thinking phase).
+  // Must be called before early returns to satisfy the Rules of Hooks.
+  const displayContent = useMemo(
+    () =>
+      thinkingContent
+        ? thinkingContent
+            .replace(/^\s*Thinking Process[:\s]*\n*/i, '')
+            .trimStart()
+        : '',
+    [thinkingContent],
+  );
+
   if (!hasThinkingContent && !isPending) return null;
 
   if (isPending) {
@@ -41,10 +55,6 @@ export function ThinkingBlock({
     );
   }
 
-  // Strip "Thinking Process:" label that Gemma4 prepends to thinking tokens
-  const displayContent = thinkingContent!
-    .replace(/^\s*Thinking Process[:\s]*\n*/i, '')
-    .trimStart();
   const summaryLabel = isThinking ? THINKING_LABEL : 'Thought process';
   const chevron = (
     <span

@@ -1,16 +1,12 @@
 /*!
  * Thuki Core Library
  *
- * Application bootstrap for the Thuki desktop agent. Configures the macOS
- * status bar presence, system tray menu, double-tap Option hotkey, and
- * window lifecycle (hide-on-close instead of quit).
+ * Application bootstrap for the Thuki desktop agent. Configures the
+ * system tray, global hotkey (Ctrl+Space on Windows), and window lifecycle
+ * (hide-on-close instead of quit).
  *
- * On macOS the main window is converted to an NSPanel via `tauri-nspanel`.
- * This allows the overlay to appear on top of native fullscreen applications
- * - something a standard NSWindow cannot do regardless of window level.
- *
- * The overlay is toggled via a system-level activation trigger (macOS only),
- * managed by the `activator` module.
+ * On Windows the main window is a standard Tauri WebviewWindow.
+ * The overlay is toggled via `tauri-plugin-global-shortcut` (Ctrl+Space).
  */
 
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]

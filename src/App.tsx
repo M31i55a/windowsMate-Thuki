@@ -1628,7 +1628,7 @@ function App() {
   }, [replayEntranceAnimation, requestHideOverlay]);
 
   /**
-   * Combined close handler shared by the keyboard shortcut (Esc/Cmd+W)
+   * Combined close handler shared by the keyboard shortcut (Esc/Ctrl+W)
    * and the traffic light close/minimize buttons. Notifies the Rust
    * backend and triggers the frontend exit animation sequence.
    */
@@ -1637,7 +1637,7 @@ function App() {
     requestHideOverlay();
   }, [requestHideOverlay]);
 
-  /** Hide window on Escape or Cmd+W (macOS) / Ctrl+W. */
+  /** Hide window on Escape or Ctrl+W. */
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (((e.metaKey || e.ctrlKey) && e.key === 'w') || e.key === 'Escape') {

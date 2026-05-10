@@ -402,10 +402,24 @@ pub async fn stream_ollama_chat(
             let mut stream = response.bytes_stream();
             let mut buffer: Vec<u8> = Vec::new();
 
+            // Batch thinking tokens to avoid flooding the WebView IPC queue
+            // (which can crash WebView2 on Windows with many rapid small messages).
+            // Tokens are flushed to the frontend every THINKING_BATCH_SIZE chunks,
+            // and always immediately before the first regular Token arrives.
+            let mut thinking_batch = String::new();
+            let mut thinking_batch_count: usize = 0;
+            const THINKING_BATCH_SIZE: usize = 20;
+
             loop {
                 tokio::select! {
                     biased;
                     _ = cancel_token.cancelled() => {
+                        // Flush any pending thinking content before cancelling.
+                        if !thinking_batch.is_empty() {
+                            on_chunk(StreamChunk::ThinkingToken(
+                                std::mem::take(&mut thinking_batch),
+                            ));
+                        }
                         // Drop the stream - closes the HTTP connection,
                         // which signals Ollama to stop inference.
                         drop(stream);
@@ -431,13 +445,27 @@ pub async fn stream_ollama_chat(
                                             if let Some(ref msg) = json.message {
                                                 if let Some(ref thinking) = msg.thinking {
                                                     if !thinking.is_empty() {
-                                                        on_chunk(StreamChunk::ThinkingToken(
-                                                            thinking.clone(),
-                                                        ));
+                                                        thinking_batch.push_str(thinking);
+                                                        thinking_batch_count += 1;
+                                                        if thinking_batch_count >= THINKING_BATCH_SIZE {
+                                                            on_chunk(StreamChunk::ThinkingToken(
+                                                                std::mem::take(&mut thinking_batch),
+                                                            ));
+                                                            thinking_batch_count = 0;
+                                                        }
                                                     }
                                                 }
                                                 if let Some(ref token) = msg.content {
                                                     if !token.is_empty() {
+                                                        // Flush remaining thinking tokens before
+                                                        // sending the first regular Token so the
+                                                        // frontend sees complete thinking content.
+                                                        if !thinking_batch.is_empty() {
+                                                            on_chunk(StreamChunk::ThinkingToken(
+                                                                std::mem::take(&mut thinking_batch),
+                                                            ));
+                                                            thinking_batch_count = 0;
+                                                        }
                                                         accumulated.push_str(token);
                                                         on_chunk(StreamChunk::Token(
                                                             token.clone(),
@@ -446,6 +474,12 @@ pub async fn stream_ollama_chat(
                                                 }
                                             }
                                             if let Some(true) = json.done {
+                                                // Flush any final thinking content.
+                                                if !thinking_batch.is_empty() {
+                                                    on_chunk(StreamChunk::ThinkingToken(
+                                                        std::mem::take(&mut thinking_batch),
+                                                    ));
+                                                }
                                                 on_chunk(StreamChunk::Done);
                                             }
                                         }
@@ -757,10 +791,29 @@ pub fn open_url(url: String) -> Result<(), String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err("Only http/https URLs are supported".to_string());
     }
-    std::process::Command::new("open")
-        .arg(&url)
-        .spawn()
-        .map_err(|e| format!("Failed to open URL: {e}"))?;
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {e}"))?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // `cmd /c start "" <url>` opens the URL in the default browser.
+        // The empty string is a required title argument for `start`.
+        std::process::Command::new("cmd")
+            .args(["/c", "start", "", url.as_str()])
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {e}"))?;
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {e}"))?;
+    }
     Ok(())
 }
 
