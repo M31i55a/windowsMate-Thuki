@@ -737,23 +737,23 @@ fn reset_section_on_disk_whole_file_propagates_io_error_when_parent_dir_is_reado
 #[test]
 fn trace_enabled_changed_detects_off_to_on() {
     let mut cfg = AppConfig::default();
-    cfg.debug.trace_enabled = true;
+    cfg.debug.search_trace_enabled = true;
     assert!(trace_enabled_changed(false, &cfg));
 }
 
 #[test]
 fn trace_enabled_changed_detects_on_to_off() {
     let mut cfg = AppConfig::default();
-    cfg.debug.trace_enabled = false;
+    cfg.debug.search_trace_enabled = false;
     assert!(trace_enabled_changed(true, &cfg));
 }
 
 #[test]
 fn trace_enabled_changed_returns_false_when_value_unchanged() {
     let mut cfg = AppConfig::default();
-    cfg.debug.trace_enabled = true;
+    cfg.debug.search_trace_enabled = true;
     assert!(!trace_enabled_changed(true, &cfg));
-    cfg.debug.trace_enabled = false;
+    cfg.debug.search_trace_enabled = false;
     assert!(!trace_enabled_changed(false, &cfg));
 }
 

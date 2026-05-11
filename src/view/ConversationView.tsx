@@ -47,6 +47,12 @@ interface ConversationViewProps {
   onNewConversation?: () => void;
   /** Called when the user clicks a thumbnail to preview it. */
   onImagePreview?: (path: string) => void;
+  /** Active model name to display in the WindowControls chip. */
+  activeModel?: string | null;
+  /** Called when the model picker chip in WindowControls is clicked. */
+  onModelPickerToggle?: () => void;
+  /** True when the model picker panel is open. */
+  isModelPickerOpen?: boolean;
   /** The message ID currently being spoken by TTS, if any. */
   speakingMessageId: string | null;
   /** Called when the user clicks the speak button on a message. */
@@ -86,6 +92,9 @@ export function ConversationView({
   onHistoryOpen,
   onNewConversation,
   onImagePreview,
+  activeModel,
+  onModelPickerToggle,
+  isModelPickerOpen,
   speakingMessageId,
   onSpeak,
   onStopSpeaking,
@@ -195,6 +204,9 @@ export function ConversationView({
         canSave={canSave}
         onNewConversation={onNewConversation}
         onHistoryOpen={onHistoryOpen}
+        activeModel={activeModel}
+        onModelPickerToggle={onModelPickerToggle}
+        isModelPickerOpen={isModelPickerOpen}
       />
 
       {/* Voice selector — compact dropdown for TTS voice selection */}
@@ -208,7 +220,7 @@ export function ConversationView({
 
       <div
         ref={scrollContainerRef}
-        className="chat-messages-scroll px-5 py-4 flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto"
+        className="chat-messages-scroll px-3 py-3 flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto"
       >
         {messages.map((msg, i) => {
           const isLastAssistant =

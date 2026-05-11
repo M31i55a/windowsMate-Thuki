@@ -22,7 +22,7 @@ import { AgentIndicator } from './components/AgentIndicator';
 import { TipBar } from './components/TipBar';
 import { useTips } from './hooks/useTips';
 import { MinibarView } from './components/MinibarView';
-import { ModelPicker } from './components/ModelPicker';
+import { ModelPickerPanel } from './components/ModelPickerPanel';
 import { CapabilityMismatchStrip } from './components/CapabilityMismatchStrip';
 import { getCapabilityConflicts, hasVisionConflict } from './config/capabilityConflicts';
 import { ConversationView } from './view/ConversationView';
@@ -263,6 +263,17 @@ function App() {
    */
   const isChatMode = messages.length > 0 || isGenerating || isSubmitPending;
   const { tip, tipKey, isVisible: tipVisible } = useTips(isChatMode);
+
+  const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);
+  const modelPickerPanelRef = useRef<HTMLDivElement>(null);
+
+  const handleModelPickerToggle = useCallback(() => {
+    setIsModelPickerOpen((prev) => !prev);
+  }, []);
+
+  const handleModelPickerClose = useCallback(() => {
+    setIsModelPickerOpen(false);
+  }, []);
   const previousIsChatModeRef = useRef(isChatMode);
 
   /**
@@ -382,6 +393,32 @@ function App() {
       maxHeightRef.current = 0;
     }
   }, [isGenerating]);
+
+  /** Close model picker when generation starts. */
+  useEffect(() => {
+    if (isGenerating) setIsModelPickerOpen(false);
+  }, [isGenerating]);
+
+  /** Close model picker on outside click. */
+  useEffect(() => {
+    if (!isModelPickerOpen) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Element;
+      if (target.closest?.('[data-model-picker-toggle]')) return;
+      if (modelPickerPanelRef.current?.contains(target)) return;
+      setIsModelPickerOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [isModelPickerOpen]);
+
+  /** Apply appearance CSS vars from localStorage on mount. */
+  useEffect(() => {
+    const color = localStorage.getItem('thuki-bubble-color') ?? '#ff8d5c';
+    const opacity = localStorage.getItem('thuki-bg-opacity') ?? '0.92';
+    document.documentElement.style.setProperty('--bubble-color', color);
+    document.documentElement.style.setProperty('--app-bg-opacity', opacity);
+  }, []);
 
   /**
    * Replays the entrance sequence by transitioning the overlay to the visible state.
@@ -1555,7 +1592,7 @@ function App() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -16, scale: 0.98 }}
             transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-            className="w-full max-w-2xl px-4 py-2 overflow-visible"
+            className="w-full max-w-2xl px-2 py-2 overflow-visible"
           >
             {/* Relative wrapper — serves as the positioning context for the
                 chat-mode history dropdown so it can sit outside the morphing
@@ -1573,18 +1610,26 @@ function App() {
                 style={{
                   transition:
                     'height 0.25s cubic-bezier(0.16, 1, 0.3, 1), min-height 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                  background: `rgba(32,32,32,var(--app-bg-opacity, 0.92))`,
+                  backdropFilter: 'blur(20px)',
                 }}
-                className={`morphing-container relative flex flex-col bg-surface-base max-h-[600px] overflow-hidden`}
+                className={`morphing-container relative flex flex-col max-h-[600px] overflow-hidden`}
               >
-                {/* Model Picker — shown in chat mode above the conversation */}
-                {isChatMode && (
-                  <ModelPicker
-                    active={modelSelection.active}
-                    all={modelSelection.all}
-                    ollamaReachable={modelSelection.ollamaReachable}
-                    capabilities={modelSelection.capabilities}
-                    onSelect={modelSelection.selectModel}
-                  />
+                {/* Model Picker Panel — floats above conversation when open */}
+                {isModelPickerOpen && (
+                  <div ref={modelPickerPanelRef}>
+                    <ModelPickerPanel
+                      models={modelSelection.all}
+                      activeModel={modelSelection.active}
+                      onSelect={(model) => {
+                        void modelSelection.selectModel(model);
+                        handleModelPickerClose();
+                      }}
+                      onClose={handleModelPickerClose}
+                      compact={isChatMode}
+                      capabilities={modelSelection.capabilities}
+                    />
+                  </div>
                 )}
 
                 {/* Chat Messages Area — morphs in when in chat mode */}
@@ -1605,6 +1650,9 @@ function App() {
                       onNewConversation={handleNewConversation}
                       onHistoryOpen={handleHistoryToggle}
                       onImagePreview={handleChatImagePreview}
+                      activeModel={modelSelection.active}
+                      onModelPickerToggle={handleModelPickerToggle}
+                      isModelPickerOpen={isModelPickerOpen}
                       speakingMessageId={speakingMessageId}
                       onSpeak={ttsSpeak}
                       onStopSpeaking={ttsStop}
@@ -1712,6 +1760,8 @@ function App() {
                   onImagePreview={handleAskBarImagePreview}
                   onScreenshot={handleScreenshot}
                   isDragOver={isDragOver ?? undefined}
+                  onModelPickerToggle={handleModelPickerToggle}
+                  isModelPickerOpen={isModelPickerOpen}
                 />
               </div>
 

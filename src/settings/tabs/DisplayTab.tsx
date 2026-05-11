@@ -2,7 +2,8 @@
  * Display tab - window dimensions and quoted-text preview limits.
  */
 
-import { Section, NumberSlider, NumberStepper } from '../components';
+import { useState } from 'react';
+import { Section, NumberSlider, NumberStepper, SettingRow } from '../components';
 import { SaveField } from '../components/SaveField';
 import { configHelp } from '../configHelpers';
 import type { RawAppConfig } from '../types';
@@ -14,6 +15,27 @@ interface DisplayTabProps {
 }
 
 export function DisplayTab({ config, resyncToken, onSaved }: DisplayTabProps) {
+  const [bubbleColor, setBubbleColor] = useState(
+    () => localStorage.getItem('thuki-bubble-color') ?? '#ff8d5c',
+  );
+  const [transparency, setTransparency] = useState(
+    () => Number(localStorage.getItem('thuki-bg-opacity-pct') ?? '92'),
+  );
+
+  function applyBubbleColor(color: string) {
+    setBubbleColor(color);
+    localStorage.setItem('thuki-bubble-color', color);
+    document.documentElement.style.setProperty('--bubble-color', color);
+  }
+
+  function applyTransparency(pct: number) {
+    setTransparency(pct);
+    const opacity = (pct / 100).toFixed(2);
+    localStorage.setItem('thuki-bg-opacity-pct', String(pct));
+    localStorage.setItem('thuki-bg-opacity', opacity);
+    document.documentElement.style.setProperty('--app-bg-opacity', opacity);
+  }
+
   return (
     <>
       <Section heading="Window">
@@ -92,6 +114,29 @@ export function DisplayTab({ config, resyncToken, onSaved }: DisplayTabProps) {
             <NumberStepper value={value} min={1} max={65536} step={256} onChange={setValue} ariaLabel="Max context length" />
           )}
         />
+      </Section>
+
+      <Section heading="Appearance">
+        <SettingRow label="Chat bubble color">
+          <input
+            type="color"
+            value={bubbleColor}
+            onChange={(e) => applyBubbleColor(e.target.value)}
+            aria-label="Chat bubble color"
+            style={{ width: 40, height: 28, padding: 2, cursor: 'pointer', borderRadius: 6, border: '1px solid rgba(255,255,255,0.15)', background: 'transparent' }}
+          />
+        </SettingRow>
+        <SettingRow label="Window transparency">
+          <NumberSlider
+            value={transparency}
+            min={50}
+            max={100}
+            step={1}
+            unit="%"
+            onChange={applyTransparency}
+            ariaLabel="Window transparency"
+          />
+        </SettingRow>
       </Section>
     </>
   );

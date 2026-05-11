@@ -1,107 +1,65 @@
 /**
- * ModelPicker — dropdown/popup for selecting the active Ollama model.
+ * ModelPicker — chip trigger button for the model selector.
  *
- * Shows the current model as a chip. Clicking opens a panel listing all
- * installed models with capability badges (vision, thinking).
- * Models not yet loaded show a warmup indicator.
+ * Renders a compact chip that opens/closes the ModelPickerPanel when
+ * clicked. Does not own any panel state — the parent controls `isOpen`
+ * and `onClick`.
  */
 
-import { useState, useRef, useEffect } from 'react';
-import type { Capabilities } from '../hooks/useModelSelection';
 import styles from '../styles/model-picker.module.css';
 
-interface ModelPickerProps {
-  active: string | null;
-  all: string[];
-  ollamaReachable: boolean;
-  capabilities: Record<string, Capabilities>;
-  onSelect: (model: string) => void;
-}
+/** CPU/model chip icon — hoisted to avoid re-allocation on every render. */
+const CHIP_ICON = (
+  <svg
+    width="13"
+    height="13"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <rect x="2" y="2" width="20" height="20" rx="3" />
+    <path d="M9 2v20M15 2v20M2 9h20M2 15h20" />
+  </svg>
+);
 
-function CapabilityBadge({ cap }: { cap: Capabilities }) {
-  const badges: string[] = [];
-  if (cap.vision) badges.push('vision');
-  if (cap.thinking) badges.push('thinking');
-  if (badges.length === 0) return null;
-  return (
-    <span className={styles.badgeGroup}>
-      {badges.map((b) => (
-        <span key={b} className={`${styles.badge} ${styles[b]}`}>
-          {b}
-        </span>
-      ))}
-    </span>
-  );
+export interface ModelPickerProps {
+  /** Called when the user clicks the chip. */
+  onClick: () => void;
+  /** When true, the button is non-interactive. */
+  disabled?: boolean;
+  /** Controls the aria-expanded attribute — set to true when the panel is open. */
+  isOpen: boolean;
+  /**
+   * Optional label shown inside the chip (e.g. active model name).
+   * When omitted, only the icon is rendered.
+   */
+  label?: string;
 }
 
 export function ModelPicker({
-  active,
-  all,
-  ollamaReachable,
-  capabilities,
-  onSelect,
+  onClick,
+  disabled = false,
+  isOpen,
+  label,
 }: ModelPickerProps) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
-
-  if (!ollamaReachable) {
-    return (
-      <div className={styles.picker}>
-        <span className={styles.unreachable}>Ollama unreachable</span>
-      </div>
-    );
-  }
-
-  if (all.length === 0) {
-    return (
-      <div className={styles.picker}>
-        <span className={styles.noModels}>No models installed</span>
-      </div>
-    );
-  }
-
   return (
-    <div className={styles.picker} ref={ref}>
-      <button
-        className={styles.chip}
-        onClick={() => setOpen((v) => !v)}
-        aria-label="Select model"
-        aria-expanded={open}
-      >
-        <span className={styles.chipLabel}>{active || 'Select model'}</span>
-        <span className={styles.chevron}>{open ? '▲' : '▼'}</span>
-      </button>
-
-      {open && (
-        <div className={styles.panel} role="listbox">
-          {all.map((model) => (
-            <button
-              key={model}
-              className={`${styles.row} ${model === active ? styles.active : ''}`}
-              role="option"
-              aria-selected={model === active}
-              onClick={() => {
-                onSelect(model);
-                setOpen(false);
-              }}
-            >
-              <span className={styles.modelName}>{model}</span>
-              {capabilities[model] && <CapabilityBadge cap={capabilities[model]} />}
-            </button>
-          ))}
-        </div>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label="Choose model"
+      aria-expanded={isOpen}
+      data-model-picker-toggle
+      className={styles.chip}
+    >
+      {CHIP_ICON}
+      {label !== undefined && label !== '' && (
+        <span className={styles.chipLabel}>{label}</span>
       )}
-    </div>
+    </button>
   );
 }

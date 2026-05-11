@@ -513,6 +513,14 @@ pub(crate) fn coerce_json_to_toml(
     })
 }
 
+/// Returns `true` when the `debug.search_trace_enabled` value in `new_cfg`
+/// differs from `old_value`. Used by settings command handlers to decide
+/// whether a live-recorder swap is needed after a config write.
+#[cfg(test)]
+pub(crate) fn trace_enabled_changed(old_value: bool, new_cfg: &AppConfig) -> bool {
+    old_value != new_cfg.debug.search_trace_enabled
+}
+
 /// Returns a stable, human-readable name for a JSON value's primitive type.
 /// Used in error messages so the frontend can surface "expected integer, got
 /// string" without inspecting the raw `Value` itself.

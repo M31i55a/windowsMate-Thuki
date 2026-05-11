@@ -6,6 +6,7 @@ import { quote } from '../config';
 import { ImageThumbnails } from '../components/ImageThumbnails';
 import { CommandSuggestion } from '../components/CommandSuggestion';
 import { Tooltip } from '../components/Tooltip';
+import { ModelPicker } from '../components/ModelPicker';
 import type { AttachedImage } from '../types/image';
 import { MAX_IMAGE_SIZE_BYTES } from '../types/image';
 import { COMMANDS } from '../config/commands';
@@ -238,6 +239,15 @@ interface AskBarViewProps {
    * "normal" = violet ring; "max" = red ring + label; undefined = no ring.
    */
   isDragOver?: 'normal' | 'max';
+  /**
+   * Called when the model picker chip is clicked.
+   * When omitted, no chip is rendered.
+   */
+  onModelPickerToggle?: () => void;
+  /**
+   * True when the model picker panel is open.
+   */
+  isModelPickerOpen?: boolean;
 }
 
 /**
@@ -264,6 +274,8 @@ export function AskBarView({
   onImagePreview,
   onScreenshot,
   isDragOver,
+  onModelPickerToggle,
+  isModelPickerOpen = false,
 }: AskBarViewProps) {
   /** Ref to the mirror div behind the textarea for command highlighting. */
   const mirrorRef = useRef<HTMLDivElement>(null);
@@ -592,6 +604,16 @@ export function AskBarView({
             }`}
             draggable={false}
           />
+
+          {/* Model picker chip — ask-bar mode only. In chat mode it lives in WindowControls. */}
+          {!isChatMode && onModelPickerToggle !== undefined && (
+            <Tooltip label="Choose model">
+              <ModelPicker
+                onClick={onModelPickerToggle}
+                isOpen={isModelPickerOpen}
+              />
+            </Tooltip>
+          )}
 
           {/* Compact history entry point: ask-bar mode only. In chat mode the
             history button lives in the ConversationView header. */}

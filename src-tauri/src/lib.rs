@@ -19,17 +19,18 @@ pub mod providers;
 pub mod screenshot;
 pub mod search;
 pub mod settings_commands;
+pub mod trace;
 pub mod tts;
 pub mod warmup;
 
 #[cfg(target_os = "windows")]
-mod windows_activator;
-#[cfg(target_os = "windows")]
-mod computer_control;
-#[cfg(target_os = "windows")]
 mod agent;
 #[cfg(target_os = "windows")]
 mod autostart;
+#[cfg(target_os = "windows")]
+mod computer_control;
+#[cfg(target_os = "windows")]
+mod windows_activator;
 
 mod gateway;
 #[cfg(target_os = "windows")]
@@ -354,14 +355,7 @@ fn toggle_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::Activation
                     }
                 }));
             }
-            emit_overlay_visibility(
-                &handle,
-                OVERLAY_VISIBILITY_SHOW,
-                None,
-                None,
-                None,
-                None,
-            );
+            emit_overlay_visibility(&handle, OVERLAY_VISIBILITY_SHOW, None, None, None, None);
         });
         return;
     }
@@ -637,8 +631,7 @@ fn spawn_periodic_image_cleanup(app_handle: tauri::AppHandle) {
 /// Panics if the Tauri runtime fails to initialise.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_notification::init());
+    let builder = tauri::Builder::default().plugin(tauri_plugin_notification::init());
 
     builder
         .setup(|app| {
