@@ -190,10 +190,10 @@ export function ConversationView({
   return (
     <motion.div
       key="chat-area"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ opacity: { duration: 0.2 } }}
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -4 }}
+      transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
       className="chat-area flex-1 min-h-0 flex flex-col"
     >
       <WindowControls

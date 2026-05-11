@@ -558,8 +558,8 @@ function App() {
     void container.offsetHeight;
 
     const frameId = requestAnimationFrame(() => {
-      // 0.4s and slightly softer cubic bezier specifically for upward morph
-      container.style.transition = 'height 0.4s cubic-bezier(0.2, 0.8, 0.2, 1)';
+      // 0.45s smooth spring-like ease for upward morph
+      container.style.transition = 'height 0.45s cubic-bezier(0.16, 1, 0.3, 1)';
       container.style.height = '600px';
     });
 
@@ -589,7 +589,7 @@ function App() {
       // offsetHeight might read 0 if hidden, so default to collapsed
       prevHeightRef.current = h > 0 ? h : COLLAPSED_WINDOW_HEIGHT;
       container.style.transition =
-        'min-height 0.25s cubic-bezier(0.16, 1, 0.3, 1)';
+        'min-height 0.35s cubic-bezier(0.16, 1, 0.3, 1)';
       container.style.height = '';
       container.style.minHeight = '';
       return;
@@ -597,7 +597,7 @@ function App() {
 
     if (!isHistoryOpen) {
       container.style.transition =
-        'min-height 0.25s cubic-bezier(0.16, 1, 0.3, 1)';
+        'min-height 0.35s cubic-bezier(0.16, 1, 0.3, 1)';
       container.style.minHeight = '';
       return;
     }
@@ -606,7 +606,7 @@ function App() {
     if (!dropdown) return;
 
     container.style.transition =
-      'min-height 0.25s cubic-bezier(0.16, 1, 0.3, 1)';
+      'min-height 0.35s cubic-bezier(0.16, 1, 0.3, 1)';
     container.style.height = ''; // Let history panel dictate it via minHeight
 
     const sync = () => {
@@ -1588,10 +1588,10 @@ function App() {
         {shouldRenderOverlay ? (
           <motion.div
             key={`overlay-${sessionId}`}
-            initial={{ opacity: 0, y: -20, scale: 0.96 }}
+            initial={{ opacity: 0, y: -16, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -16, scale: 0.98 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+            exit={{ opacity: 0, y: -12, scale: 0.98 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 26, mass: 0.8 }}
             className="w-full max-w-2xl px-2 py-2 overflow-visible"
           >
             {/* Relative wrapper — serves as the positioning context for the
@@ -1609,11 +1609,11 @@ function App() {
                 ref={setContainerRef}
                 style={{
                   transition:
-                    'height 0.25s cubic-bezier(0.16, 1, 0.3, 1), min-height 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                    'height 0.35s cubic-bezier(0.16, 1, 0.3, 1), min-height 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
                   background: `rgba(32,32,32,var(--app-bg-opacity, 0.92))`,
                   backdropFilter: 'blur(20px)',
                 }}
-                className={`morphing-container relative flex flex-col max-h-[600px] overflow-hidden`}
+                className={`morphing-container relative flex flex-col max-h-[600px] overflow-hidden rounded-xl`}
               >
                 {/* Model Picker Panel — floats above conversation when open */}
                 {isModelPickerOpen && (

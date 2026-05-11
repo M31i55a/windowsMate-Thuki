@@ -56,8 +56,10 @@ body {
 
 /* ─── Morphing Container ─── */
 .morphing-container {
-  will-change: transform;
-  transition: box-shadow 0.3s cubic-bezier(0.33, 1, 0.68, 1);
+  will-change: height, transform;
+  transition:
+    box-shadow 0.3s cubic-bezier(0.33, 1, 0.68, 1),
+    border-radius 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* ─── Chat Bubble Styles ─── */
