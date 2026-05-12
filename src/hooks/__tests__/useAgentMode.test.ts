@@ -3,6 +3,7 @@ import { renderHook, act } from '@testing-library/react';
 import { useAgentMode } from '../useAgentMode';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { clearEventHandlers } from '../../testUtils/mocks/tauri';
 
 // These are the project's vitest-alias mocks from testUtils/mocks/tauri.ts
 const mockInvoke = invoke as unknown as ReturnType<typeof vi.fn>;
@@ -10,6 +11,7 @@ const mockListen = listen as unknown as ReturnType<typeof vi.fn>;
 
 describe('useAgentMode', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     // Default: get_ollama_url succeeds, get_config returns ollama, get_settings is empty.
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === 'get_ollama_url') return Promise.resolve('http://127.0.0.1:11434');
@@ -25,6 +27,7 @@ describe('useAgentMode', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    clearEventHandlers();
   });
 
   it('should start in idle state', () => {
@@ -142,5 +145,81 @@ describe('useAgentMode', () => {
       ([cmd]: [string]) => cmd === 'set_agent_provider',
     );
     expect(setProviderCalls).toHaveLength(0);
+  });
+
+  it('calls onComplete with summary and isError:false when done event fires', async () => {
+    // Capture the agent event listener so we can trigger it directly in the test.
+    let capturedHandler: ((event: { payload: unknown }) => void) | null = null;
+    mockListen.mockImplementation(
+      async (event: string, handler: (event: { payload: unknown }) => void) => {
+        if (event === 'thuki://agent') capturedHandler = handler;
+        return vi.fn();
+      },
+    );
+
+    const onComplete = vi.fn();
+    const { result } = renderHook(() => useAgentMode(null, onComplete));
+
+    await act(async () => {
+      await result.current.start('open notepad');
+    });
+
+    act(() => {
+      capturedHandler?.({ payload: { type: 'done', data: { summary: 'Notepad opened.' } } });
+    });
+
+    expect(onComplete).toHaveBeenCalledOnce();
+    expect(onComplete).toHaveBeenCalledWith({ summary: 'Notepad opened.', isError: false });
+    expect(result.current.isActive).toBe(false);
+    expect(result.current.status).toBe('done');
+  });
+
+  it('calls onComplete with error message and isError:true when error event fires', async () => {
+    let capturedHandler: ((event: { payload: unknown }) => void) | null = null;
+    mockListen.mockImplementation(
+      async (event: string, handler: (event: { payload: unknown }) => void) => {
+        if (event === 'thuki://agent') capturedHandler = handler;
+        return vi.fn();
+      },
+    );
+
+    const onComplete = vi.fn();
+    const { result } = renderHook(() => useAgentMode(null, onComplete));
+
+    await act(async () => {
+      await result.current.start('open notepad');
+    });
+
+    act(() => {
+      capturedHandler?.({ payload: { type: 'error', data: 'Ollama query failed' } });
+    });
+
+    expect(onComplete).toHaveBeenCalledOnce();
+    expect(onComplete).toHaveBeenCalledWith({ summary: 'Ollama query failed', isError: true });
+    expect(result.current.isActive).toBe(false);
+    expect(result.current.status).toBe('error');
+  });
+
+  it('does not call onComplete when no callback is provided', async () => {
+    let capturedHandler: ((event: { payload: unknown }) => void) | null = null;
+    mockListen.mockImplementation(
+      async (event: string, handler: (event: { payload: unknown }) => void) => {
+        if (event === 'thuki://agent') capturedHandler = handler;
+        return vi.fn();
+      },
+    );
+
+    const { result } = renderHook(() => useAgentMode(null));
+
+    await act(async () => {
+      await result.current.start('open notepad');
+    });
+
+    // Should not throw — just verify hook works fine without callback.
+    act(() => {
+      capturedHandler?.({ payload: { type: 'done', data: { summary: 'Done.' } } });
+    });
+
+    expect(result.current.isActive).toBe(false);
   });
 });

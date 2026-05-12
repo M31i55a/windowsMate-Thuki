@@ -167,7 +167,7 @@ function App() {
     [persistTurn],
   );
 
-  const { messages, ask, askSearch, cancel, isGenerating, reset, loadMessages } =
+  const { messages, ask, askSearch, cancel, isGenerating, reset, loadMessages, injectMessages } =
     useOllama(handleTurnComplete);
 
   const {
@@ -254,9 +254,19 @@ function App() {
       ? provider.openRouter.model
       : modelSelection.active;
 
-  const agentMode = useAgentMode(modelSelection.active
-    ? { active: modelSelection.active }
-    : null);
+  const agentMode = useAgentMode(
+    modelSelection.active ? { active: modelSelection.active } : null,
+    ({ summary, isError }) => {
+      injectMessages([
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: summary || (isError ? 'Agent encountered an error.' : 'Task complete.'),
+          ...(isError ? { errorKind: 'Other' as const } : {}),
+        },
+      ]);
+    },
+  );
 
   /**
    * True when the window is near the screen bottom and should grow upward.
@@ -1146,6 +1156,7 @@ function App() {
       if (intent === 'agent') {
         const task = strippedMessage || selectedContext?.trim() || '';
         if (task) {
+          injectMessages([{ id: crypto.randomUUID(), role: 'user', content: task }]);
           setQuery('');
           setSelectedContext(null);
           setAttachedImages([]);
@@ -1164,6 +1175,7 @@ function App() {
     if (found.has('/do')) {
       const task = strippedMessage || selectedContext?.trim() || '';
       if (!task) return;
+      injectMessages([{ id: crypto.randomUUID(), role: 'user', content: `/do ${task}` }]);
       setQuery('');
       setSelectedContext(null);
       setAttachedImages([]);

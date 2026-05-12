@@ -42,22 +42,38 @@ const AgentConfirmation = memo(function AgentConfirmation({
   onConfirm: (actionId: string) => void;
   onReject: (actionId: string) => void;
 }) {
+  const isConsentPrompt = confirmation.action_id === 'screenshot_consent';
+
   return (
-    <div className="flex flex-col gap-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-      <p className="text-xs text-yellow-200 font-medium">Action requires confirmation:</p>
+    <div
+      className={`flex flex-col gap-2 p-3 rounded-lg border ${
+        isConsentPrompt
+          ? 'bg-red-500/10 border-red-500/30'
+          : 'bg-yellow-500/10 border-yellow-500/30'
+      }`}
+    >
+      <p
+        className={`text-xs font-medium ${isConsentPrompt ? 'text-red-300' : 'text-yellow-200'}`}
+      >
+        {isConsentPrompt ? '⚠️ Privacy warning' : 'Action requires confirmation:'}
+      </p>
       <p className="text-xs text-neutral-300 leading-relaxed">{confirmation.description}</p>
       <div className="flex gap-2 mt-1">
         <button
           onClick={() => onConfirm(confirmation.action_id)}
-          className="flex-1 px-3 py-1.5 rounded-md text-xs font-medium bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 transition-colors cursor-pointer"
+          className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer ${
+            isConsentPrompt
+              ? 'bg-red-500/20 text-red-200 hover:bg-red-500/30'
+              : 'bg-amber-500/20 text-amber-200 hover:bg-amber-500/30'
+          }`}
         >
-          Allow
+          {isConsentPrompt ? 'Allow (send screenshots)' : 'Allow'}
         </button>
         <button
           onClick={() => onReject(confirmation.action_id)}
           className="flex-1 px-3 py-1.5 rounded-md text-xs font-medium bg-neutral-700/50 text-neutral-400 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
         >
-          Deny
+          {isConsentPrompt ? 'No (text only)' : 'Deny'}
         </button>
       </div>
     </div>

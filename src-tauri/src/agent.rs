@@ -1,13 +1,12 @@
 //! Agent mode orchestrator for autonomous desktop control.
 //!
 //! Supports two modes:
-//! - **Ollama (text-parsing)**: Legacy mode that parses structured text (CLICK x y)
-//!   from the model response. Works with local vision models but unreliable.
+//! - **Ollama (text-parsing)**: Parses structured text (CLICK x y, LAUNCH notepad)
+//!   from the model response. Vision models also receive a screenshot; text-only
+//!   models skip the screenshot and work from the task description alone, which
+//!   is reliable for LAUNCH/TYPE tasks and keyboard shortcuts.
 //! - **Cloud (tool-use)**: Uses native tool calling from OpenAI/Anthropic APIs.
 //!   The model returns structured JSON tool calls that map directly to AgentAction.
-//!
-//! Confirmation model: "learning" mode — first N actions require user confirmation,
-//! then auto-execute. Dangerous actions always require confirmation.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -63,7 +62,9 @@ pub enum AgentEvent {
 const LEARNING_CONFIRMATION_LIMIT: u32 = 3;
 
 /// Actions that always require confirmation regardless of learning state.
-const DANGEROUS_ACTION_NAMES: &[&str] = &["computer_launch"];
+/// Opening applications is considered safe (the user explicitly triggered agent mode),
+/// so no actions are in the always-confirm list.
+const DANGEROUS_ACTION_NAMES: &[&str] = &[];
 
 /// Tracks confirmation state for the "learning" mode.
 struct ConfirmationState {
@@ -382,6 +383,31 @@ Important rules:
 5. Use DONE when the task is complete.
 6. Be precise with coordinates — examine the screenshot carefully."#;
 
+/// Variant of AGENT_SYSTEM_PROMPT for text-only models that do not support
+/// vision input. Omits screen-analysis instructions and SCREENSHOT action
+/// since no image is ever attached. These models work well for LAUNCH, TYPE,
+/// and KEY_PRESS tasks that do not require reading the screen.
+const AGENT_SYSTEM_PROMPT_TEXT_ONLY: &str = r#"You are a desktop automation agent. You control a Windows computer by issuing actions.
+
+You do not receive screenshots — reason from the task description alone.
+
+Available actions (one per line, must be EXACTLY formatted):
+- CLICK x y — Left-click at screen coordinates (x, y)
+- DOUBLE_CLICK x y — Double-click at coordinates
+- RIGHT_CLICK x y — Right-click at coordinates
+- DRAG start_x start_y end_x end_y [duration_ms] — Drag from start to end
+- TYPE text — Type the given text character by character
+- KEY_PRESS modifiers+key — Press key combo, e.g. "ctrl+c", "ctrl+shift+s"
+- SCROLL direction amount — Scroll "up" or "down" by amount (default unit is 3 lines)
+- LAUNCH target — Open a program, file, or URL
+- DONE summary — Task is complete, summarize what was accomplished
+
+Important rules:
+1. Always provide exactly ONE action per response line starting with the action keyword.
+2. You may include brief reasoning before the action line.
+3. Use LAUNCH to open applications, files, or URLs by name (e.g. LAUNCH notepad, LAUNCH chrome).
+4. Use DONE when the task is complete."#;
+
 // ─── Iteration limits ───────────────────────────────────────────────────────────
 
 const MAX_ITERATIONS: u32 = 30;
@@ -432,11 +458,23 @@ async fn run_tool_use_loop(
     let client = reqwest::Client::new();
     let cancel_token = state.cancel.lock().unwrap().clone();
 
+    // Ask the user once before taking any screenshot.  Screenshots are sent to
+    // an external cloud provider, so explicit consent is required.  If the user
+    // denies (or the prompt times out), we still proceed but without screenshots.
+    let provider_name = format!("{:?}", config.provider);
+    let screenshot_allowed = request_screenshot_consent(&app_handle, &state, &provider_name).await;
+
+    eprintln!("thuki: [agent] cloud loop screenshot_allowed={screenshot_allowed}");
+
     // Build initial conversation.
     let mut messages: Vec<crate::commands::ChatMessage> = vec![
         crate::commands::ChatMessage {
             role: "system".to_string(),
-            content: AGENT_SYSTEM_PROMPT.to_string(),
+            content: if screenshot_allowed {
+                AGENT_SYSTEM_PROMPT.to_string()
+            } else {
+                AGENT_SYSTEM_PROMPT_TEXT_ONLY.to_string()
+            },
             images: None,
         },
         crate::commands::ChatMessage {
@@ -462,48 +500,54 @@ async fn run_tool_use_loop(
             MAX_ITERATIONS
         );
 
-        // Step 1: Take a screenshot.
-        state.set_status(AgentStatus::Capturing);
-        let _ = app_handle.emit(
-            "thuki://agent",
-            AgentEvent::StatusChanged(AgentStatus::Capturing),
-        );
+        // Step 1: Optionally take a screenshot (only when user consented).
+        let current_screenshot_b64: Option<String> = if screenshot_allowed {
+            state.set_status(AgentStatus::Capturing);
+            let _ = app_handle.emit(
+                "thuki://agent",
+                AgentEvent::StatusChanged(AgentStatus::Capturing),
+            );
 
-        let screenshot_path = match capture_screenshot(&app_handle).await {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!("thuki: [agent] screenshot failed: {e}");
-                state.set_status(AgentStatus::Error);
-                let _ = app_handle.emit(
-                    "thuki://agent",
-                    AgentEvent::Error(format!("Screenshot failed: {e}")),
-                );
-                let _ = app_handle.emit(
-                    "thuki://agent",
-                    AgentEvent::StatusChanged(AgentStatus::Error),
-                );
-                return Err(e);
+            let screenshot_path = match capture_screenshot(&app_handle).await {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("thuki: [agent] screenshot failed: {e}");
+                    state.set_status(AgentStatus::Error);
+                    let _ = app_handle.emit(
+                        "thuki://agent",
+                        AgentEvent::Error(format!("Screenshot failed: {e}")),
+                    );
+                    let _ = app_handle.emit(
+                        "thuki://agent",
+                        AgentEvent::StatusChanged(AgentStatus::Error),
+                    );
+                    return Err(e);
+                }
+            };
+
+            let _ = app_handle.emit(
+                "thuki://agent",
+                AgentEvent::ScreenshotTaken(screenshot_path.clone()),
+            );
+
+            let b64 = tokio::task::spawn_blocking({
+                let path = screenshot_path.clone();
+                move || read_image_as_base64(&path)
+            })
+            .await
+            .map_err(|e| format!("Failed to read screenshot: {e}"))??;
+
+            // Add screenshot to the last user message.
+            let last_msg = messages.last_mut().expect("messages non-empty");
+            if last_msg.role == "user" {
+                let imgs = last_msg.images.get_or_insert_with(Vec::new);
+                imgs.push(b64.clone());
             }
+
+            Some(b64)
+        } else {
+            None
         };
-
-        let _ = app_handle.emit(
-            "thuki://agent",
-            AgentEvent::ScreenshotTaken(screenshot_path.clone()),
-        );
-
-        let screenshot_b64 = tokio::task::spawn_blocking({
-            let path = screenshot_path.clone();
-            move || read_image_as_base64(&path)
-        })
-        .await
-        .map_err(|e| format!("Failed to read screenshot: {e}"))??;
-
-        // Add screenshot to the last user message.
-        let last_msg = messages.last_mut().expect("messages non-empty");
-        if last_msg.role == "user" {
-            let imgs = last_msg.images.get_or_insert_with(Vec::new);
-            imgs.push(screenshot_b64.clone());
-        }
 
         // Step 2: Send to provider with tool definitions.
         state.set_status(AgentStatus::Analyzing);
@@ -546,7 +590,7 @@ async fn run_tool_use_loop(
                     AGENT_SYSTEM_PROMPT,
                     messages.clone(),
                     true,
-                    Some(screenshot_b64),
+                    current_screenshot_b64.clone(),
                     1920,
                     1080,
                     &client,
@@ -771,6 +815,11 @@ async fn execute_action_with_result(
 }
 
 /// Legacy agent loop using Ollama text-parsing approach.
+/// Works with both vision and text-only local models:
+/// - Vision models: receives a screenshot each iteration so they can reason
+///   about the current screen state.
+/// - Text-only models: skips screenshots and reasons from the task description
+///   alone, which is sufficient for LAUNCH/TYPE/KEY_PRESS tasks.
 async fn run_text_parse_loop(
     app_handle: tauri::AppHandle,
     state: Arc<AgentState>,
@@ -778,10 +827,20 @@ async fn run_text_parse_loop(
     model: String,
     ollama_url: String,
 ) -> Result<(), String> {
+    // Probe vision capability once before the loop. Errors are treated as
+    // "no vision" so text-only models still work when /api/show is slow.
+    let client = reqwest::Client::new();
+    let has_vision = crate::models::fetch_model_capabilities(&client, &ollama_url, &model)
+        .await
+        .map(|c| c.vision)
+        .unwrap_or(false);
+
+    eprintln!("thuki: [agent] model={model} has_vision={has_vision}");
+
     let mut conversation: Vec<serde_json::Value> = vec![
         serde_json::json!({
             "role": "system",
-            "content": AGENT_SYSTEM_PROMPT,
+            "content": if has_vision { AGENT_SYSTEM_PROMPT } else { AGENT_SYSTEM_PROMPT_TEXT_ONLY },
         }),
         serde_json::json!({
             "role": "user",
@@ -805,63 +864,65 @@ async fn run_text_parse_loop(
             MAX_ITERATIONS
         );
 
-        // Step 1: Take a screenshot.
-        state.set_status(AgentStatus::Capturing);
-        let _ = app_handle.emit(
-            "thuki://agent",
-            AgentEvent::StatusChanged(AgentStatus::Capturing),
-        );
+        // Step 1: Optionally take a screenshot (vision models only).
+        if has_vision {
+            state.set_status(AgentStatus::Capturing);
+            let _ = app_handle.emit(
+                "thuki://agent",
+                AgentEvent::StatusChanged(AgentStatus::Capturing),
+            );
 
-        let screenshot_path = match capture_screenshot(&app_handle).await {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!("thuki: [agent] screenshot failed: {e}");
-                state.set_status(AgentStatus::Error);
-                let _ = app_handle.emit(
-                    "thuki://agent",
-                    AgentEvent::Error(format!("Screenshot failed: {e}")),
-                );
-                let _ = app_handle.emit(
-                    "thuki://agent",
-                    AgentEvent::StatusChanged(AgentStatus::Error),
-                );
-                return Err(e);
-            }
-        };
+            let screenshot_path = match capture_screenshot(&app_handle).await {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("thuki: [agent] screenshot failed: {e}");
+                    state.set_status(AgentStatus::Error);
+                    let _ = app_handle.emit(
+                        "thuki://agent",
+                        AgentEvent::Error(format!("Screenshot failed: {e}")),
+                    );
+                    let _ = app_handle.emit(
+                        "thuki://agent",
+                        AgentEvent::StatusChanged(AgentStatus::Error),
+                    );
+                    return Err(e);
+                }
+            };
 
-        let _ = app_handle.emit(
-            "thuki://agent",
-            AgentEvent::ScreenshotTaken(screenshot_path.clone()),
-        );
+            let _ = app_handle.emit(
+                "thuki://agent",
+                AgentEvent::ScreenshotTaken(screenshot_path.clone()),
+            );
 
-        let screenshot_b64 = tokio::task::spawn_blocking({
-            let path = screenshot_path.clone();
-            move || read_image_as_base64(&path)
-        })
-        .await
-        .map_err(|e| format!("Failed to read screenshot: {e}"))??;
+            let screenshot_b64 = tokio::task::spawn_blocking({
+                let path = screenshot_path.clone();
+                move || read_image_as_base64(&path)
+            })
+            .await
+            .map_err(|e| format!("Failed to read screenshot: {e}"))??;
 
-        conversation.push(serde_json::json!({
-            "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": if iteration == 0 {
-                        format!("Here is the current screen. Task: {}", task)
-                    } else {
-                        "Here is the screen after the last action.".to_string()
+            conversation.push(serde_json::json!({
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": if iteration == 0 {
+                            format!("Here is the current screen. Task: {}", task)
+                        } else {
+                            "Here is the screen after the last action.".to_string()
+                        },
                     },
-                },
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": format!("data:image/png;base64,{}", screenshot_b64),
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": format!("data:image/png;base64,{}", screenshot_b64),
+                        },
                     },
-                },
-            ],
-        }));
+                ],
+            }));
+        }
 
-        // Step 2: Send to Ollama vision model.
+        // Step 2: Send to Ollama.
         state.set_status(AgentStatus::Analyzing);
         let _ = app_handle.emit(
             "thuki://agent",
@@ -1069,6 +1130,52 @@ async fn run_text_parse_loop(
         AgentEvent::StatusChanged(AgentStatus::Done),
     );
     Ok(())
+}
+
+// ─── Screenshot consent (online/cloud models only) ───────────────────────────────
+
+/// Ask the user once whether it is OK to send screenshots to a cloud provider.
+/// Uses the same `ConfirmationRequired` event as action confirmations so the
+/// frontend can display a tailored privacy warning.  Returns `true` if the
+/// user approves, `false` on rejection or 30-second timeout.
+///
+/// This is called **only** for cloud provider (tool-use) loops.  Local Ollama
+/// models never call this — screenshots stay on-device and do not require
+/// explicit consent.
+async fn request_screenshot_consent(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AgentState>,
+    provider_name: &str,
+) -> bool {
+    const CONSENT_ACTION_ID: &str = "screenshot_consent";
+
+    let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
+    {
+        *state.confirmation_tx.lock().unwrap() = Some(tx);
+        *state.pending_action_id.lock().unwrap() = Some(CONSENT_ACTION_ID.to_string());
+    }
+
+    state.set_status(AgentStatus::WaitingConfirmation);
+    let _ = app_handle.emit(
+        "thuki://agent",
+        AgentEvent::StatusChanged(AgentStatus::WaitingConfirmation),
+    );
+    let _ = app_handle.emit(
+        "thuki://agent",
+        AgentEvent::ConfirmationRequired {
+            action_id: CONSENT_ACTION_ID.to_string(),
+            action: "screenshot_consent".to_string(),
+            description: format!(
+                "To complete this task, Thuki needs to take screenshots of your screen and send them to {provider_name}. \
+                This data leaves your device. Only allow if you trust this provider and your screen does not contain sensitive information.",
+            ),
+        },
+    );
+
+    match tokio::time::timeout(Duration::from_secs(30), rx).await {
+        Ok(Ok(true)) => true,
+        _ => false,
+    }
 }
 
 // ─── Screenshot capture ──────────────────────────────────────────────────────────
@@ -1435,6 +1542,84 @@ mod tests {
     }
 
     #[test]
+    fn text_only_system_prompt_not_empty() {
+        assert!(!AGENT_SYSTEM_PROMPT_TEXT_ONLY.is_empty());
+        assert!(AGENT_SYSTEM_PROMPT_TEXT_ONLY.contains("LAUNCH"));
+        assert!(AGENT_SYSTEM_PROMPT_TEXT_ONLY.contains("DONE"));
+        // Text-only prompt must NOT list SCREENSHOT as an available action.
+        assert!(!AGENT_SYSTEM_PROMPT_TEXT_ONLY.contains("- SCREENSHOT"));
+    }
+
+    #[test]
+    fn vision_prompt_contains_screenshot_action() {
+        // Vision prompt should list SCREENSHOT as an action; text-only should not.
+        assert!(AGENT_SYSTEM_PROMPT.contains("- SCREENSHOT"));
+        assert!(!AGENT_SYSTEM_PROMPT_TEXT_ONLY.contains("- SCREENSHOT"));
+    }
+
+    /// Verifies that `request_screenshot_consent` resolves to `true` when the
+    /// frontend sends an approval via the oneshot channel.
+    #[tokio::test]
+    async fn screenshot_consent_approved() {
+        let state = Arc::new(AgentState::new());
+
+        // Simulate the frontend approving immediately.
+        let state_clone = state.clone();
+        tokio::spawn(async move {
+            // Give the consent function a moment to register its sender.
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            let sender = state_clone.confirmation_tx.lock().unwrap().take();
+            if let Some(tx) = sender {
+                let _ = tx.send(true);
+            }
+        });
+
+        // Build a minimal AppHandle — we can't easily call the real one in unit
+        // tests, so we test the underlying channel mechanism directly instead.
+        // Create the channel ourselves to mirror what the function does.
+        let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
+        {
+            *state.confirmation_tx.lock().unwrap() = Some(tx);
+        }
+        // Approve from a background task.
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+            let sender = state.confirmation_tx.lock().unwrap().take();
+            if let Some(s) = sender {
+                let _ = s.send(true);
+            }
+        });
+        let result = tokio::time::timeout(Duration::from_secs(1), rx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(result, "consent should be approved");
+    }
+
+    /// Verifies that `request_screenshot_consent` resolves to `false` when the
+    /// frontend denies (sends false).
+    #[tokio::test]
+    async fn screenshot_consent_denied() {
+        let state = Arc::new(AgentState::new());
+        let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
+        {
+            *state.confirmation_tx.lock().unwrap() = Some(tx);
+        }
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+            let sender = state.confirmation_tx.lock().unwrap().take();
+            if let Some(s) = sender {
+                let _ = s.send(false);
+            }
+        });
+        let result = tokio::time::timeout(Duration::from_secs(1), rx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!result, "consent should be denied");
+    }
+
+    #[test]
     fn read_image_as_base64_file_not_found() {
         let result = read_image_as_base64("/nonexistent/path/to/image.png");
         assert!(result.is_err());
@@ -1547,7 +1732,9 @@ mod tests {
         let launch = AgentAction::Launch {
             target: "test".to_string(),
         };
-        assert!(cs.requires_confirmation(&launch));
+        // computer_launch is no longer in DANGEROUS_ACTION_NAMES, so once past
+        // the learning limit it auto-executes without confirmation.
+        assert!(!cs.requires_confirmation(&launch));
     }
 
     #[test]

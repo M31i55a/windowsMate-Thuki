@@ -750,6 +750,63 @@ describe('useOllama', () => {
     });
   });
 
+  // ─── injectMessages() ────────────────────────────────────────────────────────
+
+  describe('injectMessages()', () => {
+    it('appends messages directly to the message list', () => {
+      const { result } = renderHook(() => useOllama());
+
+      expect(result.current.messages).toHaveLength(0);
+
+      act(() => {
+        result.current.injectMessages([
+          { id: 'u1', role: 'user', content: 'agent task' },
+          { id: 'a1', role: 'assistant', content: 'task done' },
+        ]);
+      });
+
+      expect(result.current.messages).toHaveLength(2);
+      expect(result.current.messages[0]).toMatchObject({ id: 'u1', role: 'user', content: 'agent task' });
+      expect(result.current.messages[1]).toMatchObject({ id: 'a1', role: 'assistant', content: 'task done' });
+    });
+
+    it('accumulates injected messages on top of existing messages', async () => {
+      const { result } = renderHook(() => useOllama());
+
+      await act(async () => {
+        await result.current.ask('first question');
+      });
+      const channel = getChannel();
+      act(() => {
+        channel!.simulateMessage({ type: 'Done' });
+      });
+      expect(result.current.messages).toHaveLength(2);
+
+      act(() => {
+        result.current.injectMessages([{ id: 'extra', role: 'assistant', content: 'extra' }]);
+      });
+
+      expect(result.current.messages).toHaveLength(3);
+      expect(result.current.messages[2]).toMatchObject({ id: 'extra' });
+    });
+
+    it('does not reset generating state', async () => {
+      const { result } = renderHook(() => useOllama());
+
+      await act(async () => {
+        await result.current.ask('hello');
+      });
+      // isGenerating is true until Done chunk arrives
+      expect(result.current.isGenerating).toBe(true);
+
+      act(() => {
+        result.current.injectMessages([{ id: 'x', role: 'assistant', content: 'y' }]);
+      });
+
+      expect(result.current.isGenerating).toBe(true);
+    });
+  });
+
   // ─── ThinkingToken handling ──────────────────────────────────────────────────
 
   describe('ThinkingToken handling', () => {

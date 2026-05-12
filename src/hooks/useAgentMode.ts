@@ -41,7 +41,12 @@ interface UseAgentModeReturn {
   rejectAction: (actionId: string) => Promise<void>;
 }
 
-export function useAgentMode(modelConfig: { active: string } | null): UseAgentModeReturn {
+export type AgentCompletePayload = { summary: string; isError: boolean };
+
+export function useAgentMode(
+  modelConfig: { active: string } | null,
+  onComplete?: (payload: AgentCompletePayload) => void,
+): UseAgentModeReturn {
   const [isActive, setIsActive] = useState(false);
   const [status, setStatus] = useState<AgentStatus>('idle');
   const [lastAction, setLastAction] = useState<string | null>(null);
@@ -50,6 +55,8 @@ export function useAgentMode(modelConfig: { active: string } | null): UseAgentMo
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<AgentConfirmationEvent | null>(null);
   const unlistenRef = useRef<(() => void) | null>(null);
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
 
   const start = useCallback(
     async (task: string) => {
@@ -97,9 +104,11 @@ export function useAgentMode(modelConfig: { active: string } | null): UseAgentMo
             break;
           }
           case 'error': {
-            setLastResult(data as string);
+            const errMsg = data as string;
+            setLastResult(errMsg);
             setStatus('error');
             setIsActive(false);
+            onCompleteRef.current?.({ summary: errMsg, isError: true });
             break;
           }
           case 'done': {
@@ -107,6 +116,7 @@ export function useAgentMode(modelConfig: { active: string } | null): UseAgentMo
             setReasoning(d.summary);
             setStatus('done');
             setIsActive(false);
+            onCompleteRef.current?.({ summary: d.summary, isError: false });
             break;
           }
         }

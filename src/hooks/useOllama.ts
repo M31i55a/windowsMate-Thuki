@@ -427,6 +427,15 @@ export function useOllama(
     setIsGenerating(false);
   }, []);
 
+  /**
+   * Appends one or more pre-built messages directly into the chat without
+   * going through the Ollama streaming pipeline. Used by agent mode to
+   * inject the user task and the agent result into the conversation.
+   */
+  const injectMessages = useCallback((msgs: Message[]) => {
+    setMessages((prev) => [...prev, ...msgs]);
+  }, []);
+
   return {
     messages,
     ask,
@@ -436,5 +445,6 @@ export function useOllama(
     searchStage,
     reset,
     loadMessages,
+    injectMessages,
   };
 }
