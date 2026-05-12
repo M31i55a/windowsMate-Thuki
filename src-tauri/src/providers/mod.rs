@@ -4,10 +4,11 @@
 //! based on user configuration. Each provider implements the same streaming
 //! interface but translates messages to its own API format.
 
-pub mod openai;
 pub mod anthropic;
+pub mod openai;
 
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
 
 /// Supported LLM providers.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -16,6 +17,7 @@ pub enum Provider {
     Ollama,
     OpenAI,
     Anthropic,
+    OpenRouter,
 }
 
 /// Runtime configuration for the active provider.
@@ -77,15 +79,48 @@ pub fn default_base_url(provider: &Provider) -> &'static str {
         Provider::Ollama => "http://127.0.0.1:11434",
         Provider::OpenAI => "https://api.openai.com/v1",
         Provider::Anthropic => "https://api.anthropic.com",
+        Provider::OpenRouter => "https://openrouter.ai/api/v1",
     }
 }
 
 /// Returns recommended models for each provider.
 pub fn default_models(provider: &Provider) -> &'static [&'static str] {
     match provider {
-        Provider::Ollama => &["gemini-3-flash-preview", "llama3.2-vision", "llama3.2", "mistral"],
+        Provider::Ollama => &[
+            "gemini-3-flash-preview",
+            "llama3.2-vision",
+            "llama3.2",
+            "mistral",
+        ],
         Provider::OpenAI => &["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
-        Provider::Anthropic => &["claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"],
+        Provider::Anthropic => &[
+            "claude-sonnet-4-20250514",
+            "claude-3-5-sonnet-20241022",
+            "claude-3-5-haiku-20241022",
+        ],
+        Provider::OpenRouter => &[
+            "openai/gpt-4o",
+            "anthropic/claude-sonnet-4",
+            "google/gemini-2.5-pro",
+            "meta-llama/llama-4-scout",
+        ],
+    }
+}
+
+/// Shared provider state for routing the regular ask-bar chat to the active
+/// cloud provider.  `None` means fall through to the default Ollama backend.
+/// Set by `set_agent_provider`; read by `ask_ollama`.
+pub struct SharedChatProvider(pub Mutex<Option<ProviderConfig>>);
+
+impl SharedChatProvider {
+    pub fn new() -> Self {
+        Self(Mutex::new(None))
+    }
+}
+
+impl Default for SharedChatProvider {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -95,9 +130,22 @@ mod tests {
 
     #[test]
     fn provider_serialization() {
-        assert_eq!(serde_json::to_string(&Provider::Ollama).unwrap(), "\"ollama\"");
-        assert_eq!(serde_json::to_string(&Provider::OpenAI).unwrap(), "\"openai\"");
-        assert_eq!(serde_json::to_string(&Provider::Anthropic).unwrap(), "\"anthropic\"");
+        assert_eq!(
+            serde_json::to_string(&Provider::Ollama).unwrap(),
+            "\"ollama\""
+        );
+        assert_eq!(
+            serde_json::to_string(&Provider::OpenAI).unwrap(),
+            "\"openai\""
+        );
+        assert_eq!(
+            serde_json::to_string(&Provider::Anthropic).unwrap(),
+            "\"anthropic\""
+        );
+        assert_eq!(
+            serde_json::to_string(&Provider::OpenRouter).unwrap(),
+            "\"openrouter\""
+        );
     }
 
     #[test]
@@ -110,14 +158,32 @@ mod tests {
 
     #[test]
     fn default_base_urls() {
-        assert_eq!(default_base_url(&Provider::Ollama), "http://127.0.0.1:11434");
-        assert_eq!(default_base_url(&Provider::OpenAI), "https://api.openai.com/v1");
-        assert_eq!(default_base_url(&Provider::Anthropic), "https://api.anthropic.com");
+        assert_eq!(
+            default_base_url(&Provider::Ollama),
+            "http://127.0.0.1:11434"
+        );
+        assert_eq!(
+            default_base_url(&Provider::OpenAI),
+            "https://api.openai.com/v1"
+        );
+        assert_eq!(
+            default_base_url(&Provider::Anthropic),
+            "https://api.anthropic.com"
+        );
+        assert_eq!(
+            default_base_url(&Provider::OpenRouter),
+            "https://openrouter.ai/api/v1"
+        );
     }
 
     #[test]
     fn default_models_not_empty() {
-        for provider in &[Provider::Ollama, Provider::OpenAI, Provider::Anthropic] {
+        for provider in &[
+            Provider::Ollama,
+            Provider::OpenAI,
+            Provider::Anthropic,
+            Provider::OpenRouter,
+        ] {
             assert!(!default_models(provider).is_empty());
         }
     }

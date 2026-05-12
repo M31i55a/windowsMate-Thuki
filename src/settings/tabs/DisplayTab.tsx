@@ -3,6 +3,7 @@
  */
 
 import { useState } from 'react';
+import { emit } from '@tauri-apps/api/event';
 import { Section, NumberSlider, NumberStepper, SettingRow } from '../components';
 import { SaveField } from '../components/SaveField';
 import { configHelp } from '../configHelpers';
@@ -26,6 +27,7 @@ export function DisplayTab({ config, resyncToken, onSaved }: DisplayTabProps) {
     setBubbleColor(color);
     localStorage.setItem('thuki-bubble-color', color);
     document.documentElement.style.setProperty('--bubble-color', color);
+    void emit('thuki://appearance', { bubbleColor: color, opacity: null });
   }
 
   function applyTransparency(pct: number) {
@@ -34,6 +36,7 @@ export function DisplayTab({ config, resyncToken, onSaved }: DisplayTabProps) {
     localStorage.setItem('thuki-bg-opacity-pct', String(pct));
     localStorage.setItem('thuki-bg-opacity', opacity);
     document.documentElement.style.setProperty('--app-bg-opacity', opacity);
+    void emit('thuki://appearance', { bubbleColor: null, opacity });
   }
 
   return (

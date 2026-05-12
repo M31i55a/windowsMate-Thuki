@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
 /** Provider type for agent mode. */
-type AgentProvider = 'ollama' | 'openai' | 'anthropic';
+type AgentProvider = 'ollama' | 'openai' | 'anthropic' | 'openrouter';
 
 /** Notification sound method. */
 type NotificationSound = 'system' | 'custom' | 'none';
@@ -18,12 +18,14 @@ const PROVIDER_MODELS: Record<AgentProvider, string[]> = {
   ollama: ['gemini-3-flash-preview', 'llama3.2-vision', 'llama3.2', 'mistral'],
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
   anthropic: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
+  openrouter: ['openai/gpt-4o', 'anthropic/claude-sonnet-4', 'google/gemini-2.5-pro', 'meta-llama/llama-4-scout'],
 };
 
 const PROVIDER_URLS: Record<AgentProvider, string> = {
   ollama: 'http://127.0.0.1:11434',
   openai: 'https://api.openai.com/v1',
   anthropic: 'https://api.anthropic.com',
+  openrouter: 'https://openrouter.ai/api/v1',
 };
 
 export const SETTINGS_ICON = (
@@ -277,6 +279,7 @@ export function SettingsView({ modelConfig, onClose, isStandalone }: SettingsVie
                 <option value="ollama">Ollama (Local)</option>
                 <option value="openai">OpenAI</option>
                 <option value="anthropic">Anthropic</option>
+                <option value="openrouter">OpenRouter</option>
               </select>
             </div>
             <div>
@@ -288,7 +291,7 @@ export function SettingsView({ modelConfig, onClose, isStandalone }: SettingsVie
             {agentProvider !== 'ollama' && (
               <div>
                 <label className={labelCls}>API Key</label>
-                <input type="password" value={agentApiKey} onChange={(e) => setAgentApiKey(e.target.value)} placeholder={agentProvider === 'openai' ? 'sk-...' : 'sk-ant-...'} className={inputCls} />
+                <input type="password" value={agentApiKey} onChange={(e) => setAgentApiKey(e.target.value)} placeholder={agentProvider === 'openai' ? 'sk-...' : agentProvider === 'openrouter' ? 'sk-or-v1-...' : 'sk-ant-...'} className={inputCls} />
               </div>
             )}
             <div>

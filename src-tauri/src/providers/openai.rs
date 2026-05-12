@@ -20,6 +20,11 @@ struct OpenAIChatRequest {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tools: Vec<OpenAITool>,
     stream: bool,
+    /// Cap output tokens to avoid pre-reserving huge credit budgets on hosted
+    /// routers like OpenRouter. When absent the router uses the model maximum
+    /// (e.g. 16 384 for GPT-4o), which exceeds most free-tier balances.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u32>,
 }
 
 #[derive(Serialize, Clone)]
@@ -273,7 +278,7 @@ pub async fn stream_openai_chat(
     cancel_token: CancellationToken,
     mut on_chunk: impl FnMut(ProviderChunk),
 ) -> Result<String, String> {
-    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let url = format!("{}/chat/completions", base_url.trim().trim_end_matches('/'));
 
     // Convert Ollama messages to OpenAI format.
     let openai_messages: Vec<OpenAIMessage> = messages
@@ -315,11 +320,14 @@ pub async fn stream_openai_chat(
         messages: openai_messages,
         tools,
         stream: true,
+        // Cap output tokens so OpenRouter doesn't pre-reserve the model's full
+        // context window (e.g. 16 384 for GPT-4o), which exhausts small balances.
+        max_tokens: Some(4096),
     };
 
     let response = client
         .post(&url)
-        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Authorization", format!("Bearer {}", api_key.trim()))
         .header("Content-Type", "application/json")
         .json(&request)
         .send()
@@ -329,7 +337,17 @@ pub async fn stream_openai_chat(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(format!("OpenAI returned status {}: {}", status, body));
+        // Extract the human-readable message from the JSON error body when present.
+        let friendly = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| v["error"]["message"].as_str().map(str::to_string));
+        let msg = match status.as_u16() {
+            401 => "Invalid API key\nCheck your OpenRouter API key in Settings.".to_string(),
+            402 => friendly.unwrap_or_else(|| "Insufficient credits\nTop up your OpenRouter balance at openrouter.ai/settings/credits".to_string()),
+            429 => "Rate limited\nToo many requests — wait a moment and try again.".to_string(),
+            _ => friendly.unwrap_or_else(|| format!("Request failed (HTTP {})", status.as_u16())),
+        };
+        return Err(msg);
     }
 
     let mut stream = response.bytes_stream();
@@ -494,6 +512,7 @@ mod tests {
             }],
             tools: vec![],
             stream: true,
+            max_tokens: None,
         };
         let json = serde_json::to_string(&request).unwrap();
         assert!(json.contains("\"model\":\"gpt-4o\""));

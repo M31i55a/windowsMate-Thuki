@@ -18,11 +18,12 @@ import { useTts } from './hooks/useTts';
 import { useConversationHistory } from './hooks/useConversationHistory';
 import { useAgentMode } from './hooks/useAgentMode';
 import { useModelSelection } from './hooks/useModelSelection';
+import { useProvider } from './hooks/useProvider';
 import { AgentIndicator } from './components/AgentIndicator';
 import { TipBar } from './components/TipBar';
 import { useTips } from './hooks/useTips';
 import { MinibarView } from './components/MinibarView';
-import { ModelPickerPanel } from './components/ModelPickerPanel';
+import { ProviderPickerPanel } from './components/ProviderPickerPanel';
 import { CapabilityMismatchStrip } from './components/CapabilityMismatchStrip';
 import { getCapabilityConflicts, hasVisionConflict } from './config/capabilityConflicts';
 import { ConversationView } from './view/ConversationView';
@@ -245,6 +246,13 @@ function App() {
   const [sessionId, setSessionId] = useState(0);
   const [selectedContext, setSelectedContext] = useState<string | null>(null);
   const modelSelection = useModelSelection();
+  const provider = useProvider();
+
+  /** The active model label shown in the chip — reflects provider mode. */
+  const displayModel =
+    provider.mode === 'openrouter' && provider.openRouter
+      ? provider.openRouter.model
+      : modelSelection.active;
 
   const agentMode = useAgentMode(modelSelection.active
     ? { active: modelSelection.active }
@@ -418,6 +426,23 @@ function App() {
     const opacity = localStorage.getItem('thuki-bg-opacity') ?? '0.92';
     document.documentElement.style.setProperty('--bubble-color', color);
     document.documentElement.style.setProperty('--app-bg-opacity', opacity);
+
+    // Listen for live appearance changes broadcast from the settings window.
+    let unlisten: (() => void) | undefined;
+    void import('@tauri-apps/api/event').then(({ listen }) => {
+      void listen<{ bubbleColor: string | null; opacity: string | null }>(
+        'thuki://appearance',
+        ({ payload }) => {
+          if (payload.bubbleColor) {
+            document.documentElement.style.setProperty('--bubble-color', payload.bubbleColor);
+          }
+          if (payload.opacity) {
+            document.documentElement.style.setProperty('--app-bg-opacity', payload.opacity);
+          }
+        },
+      ).then((fn) => { unlisten = fn; });
+    });
+    return () => unlisten?.();
   }, []);
 
   /**
@@ -1618,16 +1643,17 @@ function App() {
                 {/* Model Picker Panel — floats above conversation when open */}
                 {isModelPickerOpen && (
                   <div ref={modelPickerPanelRef}>
-                    <ModelPickerPanel
+                    <ProviderPickerPanel
                       models={modelSelection.all}
-                      activeModel={modelSelection.active}
-                      onSelect={(model) => {
+                      activeLocalModel={modelSelection.active}
+                      onSelectLocal={(model) => {
                         void modelSelection.selectModel(model);
                         handleModelPickerClose();
                       }}
                       onClose={handleModelPickerClose}
                       compact={isChatMode}
                       capabilities={modelSelection.capabilities}
+                      provider={provider}
                     />
                   </div>
                 )}
@@ -1650,7 +1676,7 @@ function App() {
                       onNewConversation={handleNewConversation}
                       onHistoryOpen={handleHistoryToggle}
                       onImagePreview={handleChatImagePreview}
-                      activeModel={modelSelection.active}
+                      activeModel={displayModel}
                       onModelPickerToggle={handleModelPickerToggle}
                       isModelPickerOpen={isModelPickerOpen}
                       speakingMessageId={speakingMessageId}
@@ -1719,7 +1745,7 @@ function App() {
                 {/* Capability mismatch warnings — shown when the active model
                     doesn't support a required capability (vision/thinking). */}
                 <CapabilityMismatchStrip
-                  activeModel={modelSelection.active}
+                  activeModel={displayModel}
                   capabilities={modelSelection.capabilities}
                   conflicts={capabilityConflicts}
                 />

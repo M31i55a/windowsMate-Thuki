@@ -40,7 +40,10 @@ pub enum AgentStatus {
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum AgentEvent {
     StatusChanged(AgentStatus),
-    ActionExecuted { action: String, result: String },
+    ActionExecuted {
+        action: String,
+        result: String,
+    },
     Reasoning(String),
     ScreenshotTaken(String),
     ConfirmationRequired {
@@ -49,7 +52,9 @@ pub enum AgentEvent {
         description: String,
     },
     Error(String),
-    Done { summary: String },
+    Done {
+        summary: String,
+    },
 }
 
 // ─── Confirmation state ─────────────────────────────────────────────────────────
@@ -186,17 +191,26 @@ fn tool_call_to_action(tc: &ToolCall) -> Option<AgentAction> {
         "computer_click" => {
             let x = args.get("x")?.as_i64()?;
             let y = args.get("y")?.as_i64()?;
-            Some(AgentAction::Click { x: x as i32, y: y as i32 })
+            Some(AgentAction::Click {
+                x: x as i32,
+                y: y as i32,
+            })
         }
         "computer_double_click" => {
             let x = args.get("x")?.as_i64()?;
             let y = args.get("y")?.as_i64()?;
-            Some(AgentAction::DoubleClick { x: x as i32, y: y as i32 })
+            Some(AgentAction::DoubleClick {
+                x: x as i32,
+                y: y as i32,
+            })
         }
         "computer_right_click" => {
             let x = args.get("x")?.as_i64()?;
             let y = args.get("y")?.as_i64()?;
-            Some(AgentAction::RightClick { x: x as i32, y: y as i32 })
+            Some(AgentAction::RightClick {
+                x: x as i32,
+                y: y as i32,
+            })
         }
         "computer_type" => {
             let text = args.get("text")?.as_str()?.to_string();
@@ -204,9 +218,14 @@ fn tool_call_to_action(tc: &ToolCall) -> Option<AgentAction> {
         }
         "computer_key_press" => {
             let key = args.get("key")?.as_str()?.to_string();
-            let modifiers = args.get("modifiers")
+            let modifiers = args
+                .get("modifiers")
                 .and_then(|m| m.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
             Some(AgentAction::KeyPress { modifiers, key })
         }
@@ -230,7 +249,10 @@ fn tool_call_to_action(tc: &ToolCall) -> Option<AgentAction> {
                     if arr.len() >= 2 {
                         let x = arr[0].as_i64()?;
                         let y = arr[1].as_i64()?;
-                        Some(AgentAction::Click { x: x as i32, y: y as i32 })
+                        Some(AgentAction::Click {
+                            x: x as i32,
+                            y: y as i32,
+                        })
                     } else {
                         None
                     }
@@ -241,7 +263,10 @@ fn tool_call_to_action(tc: &ToolCall) -> Option<AgentAction> {
                     if arr.len() >= 2 {
                         let x = arr[0].as_i64()?;
                         let y = arr[1].as_i64()?;
-                        Some(AgentAction::DoubleClick { x: x as i32, y: y as i32 })
+                        Some(AgentAction::DoubleClick {
+                            x: x as i32,
+                            y: y as i32,
+                        })
                     } else {
                         None
                     }
@@ -252,7 +277,10 @@ fn tool_call_to_action(tc: &ToolCall) -> Option<AgentAction> {
                     if arr.len() >= 2 {
                         let x = arr[0].as_i64()?;
                         let y = arr[1].as_i64()?;
-                        Some(AgentAction::RightClick { x: x as i32, y: y as i32 })
+                        Some(AgentAction::RightClick {
+                            x: x as i32,
+                            y: y as i32,
+                        })
                     } else {
                         None
                     }
@@ -263,9 +291,14 @@ fn tool_call_to_action(tc: &ToolCall) -> Option<AgentAction> {
                 }
                 "key_press" | "key" => {
                     let key = args.get("key")?.as_str()?.to_string();
-                    let modifiers = args.get("modifiers")
+                    let modifiers = args
+                        .get("modifiers")
                         .and_then(|m| m.as_array())
-                        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|v| v.as_str().map(String::from))
+                                .collect()
+                        })
                         .unwrap_or_default();
                     Some(AgentAction::KeyPress { modifiers, key })
                 }
@@ -288,11 +321,24 @@ fn describe_action(action: &AgentAction) -> String {
         AgentAction::Click { x, y } => format!("Click at ({}, {})", x, y),
         AgentAction::DoubleClick { x, y } => format!("Double-click at ({}, {})", x, y),
         AgentAction::RightClick { x, y } => format!("Right-click at ({}, {})", x, y),
-        AgentAction::Drag { start_x, start_y, end_x, end_y, .. } => {
-            format!("Drag from ({}, {}) to ({}, {})", start_x, start_y, end_x, end_y)
+        AgentAction::Drag {
+            start_x,
+            start_y,
+            end_x,
+            end_y,
+            ..
+        } => {
+            format!(
+                "Drag from ({}, {}) to ({}, {})",
+                start_x, start_y, end_x, end_y
+            )
         }
         AgentAction::TypeText { text } => {
-            let preview = if text.len() > 30 { &text[..30] } else { text.as_str() };
+            let preview = if text.len() > 30 {
+                &text[..30]
+            } else {
+                text.as_str()
+            };
             format!("Type \"{}\"", preview)
         }
         AgentAction::KeyPress { modifiers, key } => {
@@ -354,11 +400,19 @@ pub async fn run_agent_loop(
 ) -> Result<(), String> {
     state.reset();
     state.set_status(AgentStatus::Capturing);
-    let _ = app_handle.emit("thuki://agent", AgentEvent::StatusChanged(AgentStatus::Capturing));
+    let _ = app_handle.emit(
+        "thuki://agent",
+        AgentEvent::StatusChanged(AgentStatus::Capturing),
+    );
 
     let provider_config = state.get_provider_config();
     let use_tool_use = provider_config.as_ref().map_or(false, |c| {
-        matches!(c.provider, providers::Provider::OpenAI | providers::Provider::Anthropic)
+        matches!(
+            c.provider,
+            providers::Provider::OpenAI
+                | providers::Provider::Anthropic
+                | providers::Provider::OpenRouter
+        )
     });
 
     if use_tool_use {
@@ -395,28 +449,47 @@ async fn run_tool_use_loop(
     for iteration in 0..MAX_ITERATIONS {
         if state.is_cancelled() {
             state.set_status(AgentStatus::Done);
-            let _ = app_handle.emit("thuki://agent", AgentEvent::StatusChanged(AgentStatus::Done));
+            let _ = app_handle.emit(
+                "thuki://agent",
+                AgentEvent::StatusChanged(AgentStatus::Done),
+            );
             return Ok(());
         }
 
-        eprintln!("thuki: [agent] tool-use iteration {}/{}", iteration + 1, MAX_ITERATIONS);
+        eprintln!(
+            "thuki: [agent] tool-use iteration {}/{}",
+            iteration + 1,
+            MAX_ITERATIONS
+        );
 
         // Step 1: Take a screenshot.
         state.set_status(AgentStatus::Capturing);
-        let _ = app_handle.emit("thuki://agent", AgentEvent::StatusChanged(AgentStatus::Capturing));
+        let _ = app_handle.emit(
+            "thuki://agent",
+            AgentEvent::StatusChanged(AgentStatus::Capturing),
+        );
 
         let screenshot_path = match capture_screenshot(&app_handle).await {
             Ok(p) => p,
             Err(e) => {
                 eprintln!("thuki: [agent] screenshot failed: {e}");
                 state.set_status(AgentStatus::Error);
-                let _ = app_handle.emit("thuki://agent", AgentEvent::Error(format!("Screenshot failed: {e}")));
-                let _ = app_handle.emit("thuki://agent", AgentEvent::StatusChanged(AgentStatus::Error));
+                let _ = app_handle.emit(
+                    "thuki://agent",
+                    AgentEvent::Error(format!("Screenshot failed: {e}")),
+                );
+                let _ = app_handle.emit(
+                    "thuki://agent",
+                    AgentEvent::StatusChanged(AgentStatus::Error),
+                );
                 return Err(e);
             }
         };
 
-        let _ = app_handle.emit("thuki://agent", AgentEvent::ScreenshotTaken(screenshot_path.clone()));
+        let _ = app_handle.emit(
+            "thuki://agent",
+            AgentEvent::ScreenshotTaken(screenshot_path.clone()),
+        );
 
         let screenshot_b64 = tokio::task::spawn_blocking({
             let path = screenshot_path.clone();
@@ -434,7 +507,10 @@ async fn run_tool_use_loop(
 
         // Step 2: Send to provider with tool definitions.
         state.set_status(AgentStatus::Analyzing);
-        let _ = app_handle.emit("thuki://agent", AgentEvent::StatusChanged(AgentStatus::Analyzing));
+        let _ = app_handle.emit(
+            "thuki://agent",
+            AgentEvent::StatusChanged(AgentStatus::Analyzing),
+        );
 
         let mut accumulated_text = String::new();
         let mut tool_calls: Vec<ToolCall> = Vec::new();
@@ -442,11 +518,14 @@ async fn run_tool_use_loop(
         let mut on_chunk = |chunk: ProviderChunk| match chunk {
             ProviderChunk::Token(t) => accumulated_text.push_str(&t),
             ProviderChunk::ToolCalls(calls) => tool_calls.extend(calls),
-            ProviderChunk::Done | ProviderChunk::Cancelled | ProviderChunk::Error(_) | ProviderChunk::ThinkingToken(_) => {}
+            ProviderChunk::Done
+            | ProviderChunk::Cancelled
+            | ProviderChunk::Error(_)
+            | ProviderChunk::ThinkingToken(_) => {}
         };
 
         let result = match config.provider {
-            providers::Provider::OpenAI => {
+            providers::Provider::OpenAI | providers::Provider::OpenRouter => {
                 providers::openai::stream_openai_chat(
                     &config.base_url,
                     &config.model,
@@ -489,8 +568,14 @@ async fn run_tool_use_loop(
             Err(e) => {
                 eprintln!("thuki: [agent] provider error: {e}");
                 state.set_status(AgentStatus::Error);
-                let _ = app_handle.emit("thuki://agent", AgentEvent::Error(format!("Provider error: {e}")));
-                let _ = app_handle.emit("thuki://agent", AgentEvent::StatusChanged(AgentStatus::Error));
+                let _ = app_handle.emit(
+                    "thuki://agent",
+                    AgentEvent::Error(format!("Provider error: {e}")),
+                );
+                let _ = app_handle.emit(
+                    "thuki://agent",
+                    AgentEvent::StatusChanged(AgentStatus::Error),
+                );
                 return Err(e);
             }
         }
@@ -500,34 +585,54 @@ async fn run_tool_use_loop(
             let summary = accumulated_text.trim().to_string();
             let _ = app_handle.emit("thuki://agent", AgentEvent::Done { summary });
             state.set_status(AgentStatus::Done);
-            let _ = app_handle.emit("thuki://agent", AgentEvent::StatusChanged(AgentStatus::Done));
+            let _ = app_handle.emit(
+                "thuki://agent",
+                AgentEvent::StatusChanged(AgentStatus::Done),
+            );
             return Ok(());
         }
 
         // Step 4: Convert and execute tool calls.
         state.set_status(AgentStatus::Executing);
-        let _ = app_handle.emit("thuki://agent", AgentEvent::StatusChanged(AgentStatus::Executing));
+        let _ = app_handle.emit(
+            "thuki://agent",
+            AgentEvent::StatusChanged(AgentStatus::Executing),
+        );
 
         for tc in &tool_calls {
             if state.is_cancelled() {
                 state.set_status(AgentStatus::Done);
-                let _ = app_handle.emit("thuki://agent", AgentEvent::StatusChanged(AgentStatus::Done));
+                let _ = app_handle.emit(
+                    "thuki://agent",
+                    AgentEvent::StatusChanged(AgentStatus::Done),
+                );
                 return Ok(());
             }
 
             let action = match tool_call_to_action(tc) {
                 Some(a) => a,
                 None => {
-                    eprintln!("thuki: [agent] unparseable tool call: {} {}", tc.name, tc.arguments);
+                    eprintln!(
+                        "thuki: [agent] unparseable tool call: {} {}",
+                        tc.name, tc.arguments
+                    );
                     continue;
                 }
             };
 
             // Handle DONE action.
             if let AgentAction::Done { ref summary } = action {
-                let _ = app_handle.emit("thuki://agent", AgentEvent::Done { summary: summary.clone() });
+                let _ = app_handle.emit(
+                    "thuki://agent",
+                    AgentEvent::Done {
+                        summary: summary.clone(),
+                    },
+                );
                 state.set_status(AgentStatus::Done);
-                let _ = app_handle.emit("thuki://agent", AgentEvent::StatusChanged(AgentStatus::Done));
+                let _ = app_handle.emit(
+                    "thuki://agent",
+                    AgentEvent::StatusChanged(AgentStatus::Done),
+                );
                 return Ok(());
             }
 
@@ -564,12 +669,18 @@ async fn run_tool_use_loop(
                 }
 
                 state.set_status(AgentStatus::WaitingConfirmation);
-                let _ = app_handle.emit("thuki://agent", AgentEvent::StatusChanged(AgentStatus::WaitingConfirmation));
-                let _ = app_handle.emit("thuki://agent", AgentEvent::ConfirmationRequired {
-                    action_id: action_id.clone(),
-                    action: action_desc,
-                    description: desc,
-                });
+                let _ = app_handle.emit(
+                    "thuki://agent",
+                    AgentEvent::StatusChanged(AgentStatus::WaitingConfirmation),
+                );
+                let _ = app_handle.emit(
+                    "thuki://agent",
+                    AgentEvent::ConfirmationRequired {
+                        action_id: action_id.clone(),
+                        action: action_desc,
+                        description: desc,
+                    },
+                );
 
                 // Wait for user confirmation with a 30-second timeout.
                 match tokio::time::timeout(Duration::from_secs(30), rx).await {
@@ -580,7 +691,8 @@ async fn run_tool_use_loop(
                             conf.confirm(&action_id)
                         };
                         if let Some(confirmed_action) = confirmed_action {
-                            execute_action_with_result(&app_handle, &state, &confirmed_action).await?;
+                            execute_action_with_result(&app_handle, &state, &confirmed_action)
+                                .await?;
                         }
                     }
                     _ => {
@@ -615,9 +727,17 @@ async fn run_tool_use_loop(
     }
 
     let summary = "Agent reached maximum iteration limit".to_string();
-    let _ = app_handle.emit("thuki://agent", AgentEvent::Done { summary: summary.clone() });
+    let _ = app_handle.emit(
+        "thuki://agent",
+        AgentEvent::Done {
+            summary: summary.clone(),
+        },
+    );
     state.set_status(AgentStatus::Done);
-    let _ = app_handle.emit("thuki://agent", AgentEvent::StatusChanged(AgentStatus::Done));
+    let _ = app_handle.emit(
+        "thuki://agent",
+        AgentEvent::StatusChanged(AgentStatus::Done),
+    );
     Ok(())
 }
 
@@ -640,10 +760,13 @@ async fn execute_action_with_result(
         Err(e) => e,
     };
     state.add_to_history(format!("[Action] {} -> {}", action_desc, result_msg));
-    let _ = app_handle.emit("thuki://agent", AgentEvent::ActionExecuted {
-        action: action_desc,
-        result: result_msg,
-    });
+    let _ = app_handle.emit(
+        "thuki://agent",
+        AgentEvent::ActionExecuted {
+            action: action_desc,
+            result: result_msg,
+        },
+    );
     Ok(())
 }
 
@@ -669,28 +792,47 @@ async fn run_text_parse_loop(
     for iteration in 0..MAX_ITERATIONS {
         if state.is_cancelled() {
             state.set_status(AgentStatus::Done);
-            let _ = app_handle.emit("thuki://agent", AgentEvent::StatusChanged(AgentStatus::Done));
+            let _ = app_handle.emit(
+                "thuki://agent",
+                AgentEvent::StatusChanged(AgentStatus::Done),
+            );
             return Ok(());
         }
 
-        eprintln!("thuki: [agent] text-parse iteration {}/{}", iteration + 1, MAX_ITERATIONS);
+        eprintln!(
+            "thuki: [agent] text-parse iteration {}/{}",
+            iteration + 1,
+            MAX_ITERATIONS
+        );
 
         // Step 1: Take a screenshot.
         state.set_status(AgentStatus::Capturing);
-        let _ = app_handle.emit("thuki://agent", AgentEvent::StatusChanged(AgentStatus::Capturing));
+        let _ = app_handle.emit(
+            "thuki://agent",
+            AgentEvent::StatusChanged(AgentStatus::Capturing),
+        );
 
         let screenshot_path = match capture_screenshot(&app_handle).await {
             Ok(p) => p,
             Err(e) => {
                 eprintln!("thuki: [agent] screenshot failed: {e}");
                 state.set_status(AgentStatus::Error);
-                let _ = app_handle.emit("thuki://agent", AgentEvent::Error(format!("Screenshot failed: {e}")));
-                let _ = app_handle.emit("thuki://agent", AgentEvent::StatusChanged(AgentStatus::Error));
+                let _ = app_handle.emit(
+                    "thuki://agent",
+                    AgentEvent::Error(format!("Screenshot failed: {e}")),
+                );
+                let _ = app_handle.emit(
+                    "thuki://agent",
+                    AgentEvent::StatusChanged(AgentStatus::Error),
+                );
                 return Err(e);
             }
         };
 
-        let _ = app_handle.emit("thuki://agent", AgentEvent::ScreenshotTaken(screenshot_path.clone()));
+        let _ = app_handle.emit(
+            "thuki://agent",
+            AgentEvent::ScreenshotTaken(screenshot_path.clone()),
+        );
 
         let screenshot_b64 = tokio::task::spawn_blocking({
             let path = screenshot_path.clone();
@@ -721,20 +863,33 @@ async fn run_text_parse_loop(
 
         // Step 2: Send to Ollama vision model.
         state.set_status(AgentStatus::Analyzing);
-        let _ = app_handle.emit("thuki://agent", AgentEvent::StatusChanged(AgentStatus::Analyzing));
+        let _ = app_handle.emit(
+            "thuki://agent",
+            AgentEvent::StatusChanged(AgentStatus::Analyzing),
+        );
 
         let response = match query_ollama(&ollama_url, &model, &conversation).await {
             Ok(r) => r,
             Err(e) => {
                 eprintln!("thuki: [agent] ollama query failed: {e}");
                 state.set_status(AgentStatus::Error);
-                let _ = app_handle.emit("thuki://agent", AgentEvent::Error(format!("Ollama query failed: {e}")));
-                let _ = app_handle.emit("thuki://agent", AgentEvent::StatusChanged(AgentStatus::Error));
+                let _ = app_handle.emit(
+                    "thuki://agent",
+                    AgentEvent::Error(format!("Ollama query failed: {e}")),
+                );
+                let _ = app_handle.emit(
+                    "thuki://agent",
+                    AgentEvent::StatusChanged(AgentStatus::Error),
+                );
                 return Err(e);
             }
         };
 
-        eprintln!("thuki: [agent] model response ({} chars): {}", response.len(), &response[..response.len().min(200)]);
+        eprintln!(
+            "thuki: [agent] model response ({} chars): {}",
+            response.len(),
+            &response[..response.len().min(200)]
+        );
 
         conversation.push(serde_json::json!({
             "role": "assistant",
@@ -746,14 +901,20 @@ async fn run_text_parse_loop(
 
         // Step 3: Parse and execute actions from the response.
         state.set_status(AgentStatus::Executing);
-        let _ = app_handle.emit("thuki://agent", AgentEvent::StatusChanged(AgentStatus::Executing));
+        let _ = app_handle.emit(
+            "thuki://agent",
+            AgentEvent::StatusChanged(AgentStatus::Executing),
+        );
 
         let mut actions_executed = 0u32;
 
         for line in response.lines() {
             if state.is_cancelled() {
                 state.set_status(AgentStatus::Done);
-                let _ = app_handle.emit("thuki://agent", AgentEvent::StatusChanged(AgentStatus::Done));
+                let _ = app_handle.emit(
+                    "thuki://agent",
+                    AgentEvent::StatusChanged(AgentStatus::Done),
+                );
                 return Ok(());
             }
 
@@ -784,9 +945,17 @@ async fn run_text_parse_loop(
             };
 
             if let AgentAction::Done { ref summary } = action {
-                let _ = app_handle.emit("thuki://agent", AgentEvent::Done { summary: summary.clone() });
+                let _ = app_handle.emit(
+                    "thuki://agent",
+                    AgentEvent::Done {
+                        summary: summary.clone(),
+                    },
+                );
                 state.set_status(AgentStatus::Done);
-                let _ = app_handle.emit("thuki://agent", AgentEvent::StatusChanged(AgentStatus::Done));
+                let _ = app_handle.emit(
+                    "thuki://agent",
+                    AgentEvent::StatusChanged(AgentStatus::Done),
+                );
                 return Ok(());
             }
 
@@ -826,12 +995,18 @@ async fn run_text_parse_loop(
                 }
 
                 state.set_status(AgentStatus::WaitingConfirmation);
-                let _ = app_handle.emit("thuki://agent", AgentEvent::StatusChanged(AgentStatus::WaitingConfirmation));
-                let _ = app_handle.emit("thuki://agent", AgentEvent::ConfirmationRequired {
-                    action_id: action_id.clone(),
-                    action: action_desc,
-                    description: desc,
-                });
+                let _ = app_handle.emit(
+                    "thuki://agent",
+                    AgentEvent::StatusChanged(AgentStatus::WaitingConfirmation),
+                );
+                let _ = app_handle.emit(
+                    "thuki://agent",
+                    AgentEvent::ConfirmationRequired {
+                        action_id: action_id.clone(),
+                        action: action_desc,
+                        description: desc,
+                    },
+                );
 
                 // Wait for user confirmation with a 30-second timeout.
                 match tokio::time::timeout(Duration::from_secs(30), rx).await {
@@ -843,7 +1018,8 @@ async fn run_text_parse_loop(
                         };
                         if let Some(confirmed_action) = confirmed_action {
                             actions_executed += 1;
-                            execute_action_with_result(&app_handle, &state, &confirmed_action).await?;
+                            execute_action_with_result(&app_handle, &state, &confirmed_action)
+                                .await?;
                         }
                     }
                     _ => {
@@ -865,17 +1041,33 @@ async fn run_text_parse_loop(
         if actions_executed == 0 && !state.is_cancelled() {
             eprintln!("thuki: [agent] no parseable actions in model response");
             let summary = response.trim().to_string();
-            let _ = app_handle.emit("thuki://agent", AgentEvent::Done { summary: summary.clone() });
+            let _ = app_handle.emit(
+                "thuki://agent",
+                AgentEvent::Done {
+                    summary: summary.clone(),
+                },
+            );
             state.set_status(AgentStatus::Done);
-            let _ = app_handle.emit("thuki://agent", AgentEvent::StatusChanged(AgentStatus::Done));
+            let _ = app_handle.emit(
+                "thuki://agent",
+                AgentEvent::StatusChanged(AgentStatus::Done),
+            );
             return Ok(());
         }
     }
 
     let summary = "Agent reached maximum iteration limit".to_string();
-    let _ = app_handle.emit("thuki://agent", AgentEvent::Done { summary: summary.clone() });
+    let _ = app_handle.emit(
+        "thuki://agent",
+        AgentEvent::Done {
+            summary: summary.clone(),
+        },
+    );
     state.set_status(AgentStatus::Done);
-    let _ = app_handle.emit("thuki://agent", AgentEvent::StatusChanged(AgentStatus::Done));
+    let _ = app_handle.emit(
+        "thuki://agent",
+        AgentEvent::StatusChanged(AgentStatus::Done),
+    );
     Ok(())
 }
 
@@ -931,7 +1123,10 @@ async fn query_ollama(
 
 fn read_image_as_base64(path: &str) -> Result<String, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("Failed to read screenshot: {e}"))?;
-    Ok(base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes))
+    Ok(base64::Engine::encode(
+        &base64::engine::general_purpose::STANDARD,
+        &bytes,
+    ))
 }
 
 // ─── Tauri commands ──────────────────────────────────────────────────────────────
@@ -1013,6 +1208,7 @@ pub fn reject_agent_action(
 #[tauri::command]
 pub fn set_agent_provider(
     state: tauri::State<'_, Arc<AgentState>>,
+    chat_provider: tauri::State<'_, crate::providers::SharedChatProvider>,
     provider: String,
     model: String,
     base_url: String,
@@ -1022,15 +1218,22 @@ pub fn set_agent_provider(
         "ollama" => providers::Provider::Ollama,
         "openai" => providers::Provider::OpenAI,
         "anthropic" => providers::Provider::Anthropic,
+        "openrouter" => providers::Provider::OpenRouter,
         _ => return Err(format!("Unknown provider: {}", provider)),
     };
     let config = ProviderConfig {
-        provider,
+        provider: provider.clone(),
         model,
         base_url,
         api_key,
     };
-    state.set_provider_config(config);
+    state.set_provider_config(config.clone());
+    // Also update the shared chat provider so regular chat uses the same backend.
+    // Clear it for Ollama (fall through to native Ollama path).
+    *chat_provider.0.lock().unwrap() = match provider {
+        providers::Provider::Ollama => None,
+        _ => Some(config),
+    };
     Ok(())
 }
 
@@ -1052,6 +1255,40 @@ pub fn get_agent_provider(
             "base_url": null,
             "has_api_key": false,
         })),
+    }
+}
+
+/// Validate an OpenRouter API key by calling /auth/key.
+/// Returns Ok(label) where label is the account label, or Err(message).
+#[tauri::command]
+pub async fn validate_openrouter_key(api_key: String) -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let trimmed = api_key.trim();
+    if trimmed.is_empty() {
+        return Err("API key is empty".to_string());
+    }
+    let response = client
+        .get("https://openrouter.ai/api/v1/auth/key")
+        .header("Authorization", format!("Bearer {}", trimmed))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {e}"))?;
+
+    if response.status().is_success() {
+        let json: serde_json::Value = response.json().await.unwrap_or(serde_json::json!({}));
+        let label = json
+            .pointer("/data/label")
+            .and_then(|v| v.as_str())
+            .unwrap_or("OpenRouter")
+            .to_string();
+        Ok(label)
+    } else {
+        let status = response.status().as_u16();
+        if status == 401 || status == 403 {
+            Err("Invalid API key".to_string())
+        } else {
+            Err(format!("OpenRouter returned status {status}"))
+        }
     }
 }
 
@@ -1099,7 +1336,9 @@ mod tests {
         let json = serde_json::to_string(&event).unwrap();
         assert!(json.contains("action_executed"));
 
-        let event = AgentEvent::Done { summary: "done".to_string() };
+        let event = AgentEvent::Done {
+            summary: "done".to_string(),
+        };
         let json = serde_json::to_string(&event).unwrap();
         assert!(json.contains("done"));
 
@@ -1174,10 +1413,15 @@ mod tests {
     #[test]
     fn parse_action_integration() {
         let action = computer_control::parse_action_line("CLICK 100 200");
-        assert!(matches!(action, Some(AgentAction::Click { x: 100, y: 200 })));
+        assert!(matches!(
+            action,
+            Some(AgentAction::Click { x: 100, y: 200 })
+        ));
 
         let action = computer_control::parse_action_line("DONE task complete");
-        assert!(matches!(action, Some(AgentAction::Done { ref summary }) if summary == "task complete"));
+        assert!(
+            matches!(action, Some(AgentAction::Done { ref summary }) if summary == "task complete")
+        );
 
         let action = computer_control::parse_action_line("SCREENSHOT");
         assert!(matches!(action, Some(AgentAction::Screenshot {})));
@@ -1226,7 +1470,9 @@ mod tests {
             arguments: r#"{"key": "c", "modifiers": ["ctrl"]}"#.to_string(),
         };
         let action = tool_call_to_action(&tc).unwrap();
-        assert!(matches!(action, AgentAction::KeyPress { ref modifiers, ref key } if modifiers.len() == 1 && key == "c"));
+        assert!(
+            matches!(action, AgentAction::KeyPress { ref modifiers, ref key } if modifiers.len() == 1 && key == "c")
+        );
     }
 
     #[test]
@@ -1280,7 +1526,9 @@ mod tests {
 
     #[test]
     fn describe_action_launch() {
-        let action = AgentAction::Launch { target: "notepad".to_string() };
+        let action = AgentAction::Launch {
+            target: "notepad".to_string(),
+        };
         assert_eq!(describe_action(&action), "Open \"notepad\"");
     }
 
@@ -1296,7 +1544,9 @@ mod tests {
     fn confirmation_state_dangerous_always() {
         let mut cs = ConfirmationState::new();
         cs.confirmed_count = 100; // Way past learning limit.
-        let launch = AgentAction::Launch { target: "test".to_string() };
+        let launch = AgentAction::Launch {
+            target: "test".to_string(),
+        };
         assert!(cs.requires_confirmation(&launch));
     }
 
@@ -1339,5 +1589,55 @@ mod tests {
         state.set_provider_config(config);
         let retrieved = state.get_provider_config().unwrap();
         assert_eq!(retrieved.model, "gpt-4o");
+    }
+
+    #[test]
+    fn agent_provider_config_openrouter() {
+        let state = AgentState::new();
+        let config = ProviderConfig {
+            provider: providers::Provider::OpenRouter,
+            model: "openai/gpt-4o".to_string(),
+            base_url: "https://openrouter.ai/api/v1".to_string(),
+            api_key: "sk-or-v1-test".to_string(),
+        };
+        state.set_provider_config(config);
+        let retrieved = state.get_provider_config().unwrap();
+        assert_eq!(retrieved.model, "openai/gpt-4o");
+        assert_eq!(retrieved.base_url, "https://openrouter.ai/api/v1");
+        assert!(matches!(
+            retrieved.provider,
+            providers::Provider::OpenRouter
+        ));
+    }
+
+    #[test]
+    fn use_tool_use_openrouter() {
+        let config = ProviderConfig {
+            provider: providers::Provider::OpenRouter,
+            model: "openai/gpt-4o".to_string(),
+            base_url: "https://openrouter.ai/api/v1".to_string(),
+            api_key: "sk-or-v1-test".to_string(),
+        };
+        let use_tool_use = matches!(
+            config.provider,
+            providers::Provider::OpenAI
+                | providers::Provider::Anthropic
+                | providers::Provider::OpenRouter
+        );
+        assert!(use_tool_use);
+    }
+
+    #[tokio::test]
+    async fn validate_openrouter_key_rejects_empty() {
+        let result = validate_openrouter_key("".to_string()).await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "API key is empty");
+    }
+
+    #[tokio::test]
+    async fn validate_openrouter_key_rejects_whitespace_only() {
+        let result = validate_openrouter_key("   \n\t".to_string()).await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "API key is empty");
     }
 }

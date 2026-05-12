@@ -108,26 +108,39 @@ export function TextField({
   placeholder,
   errored,
   ariaLabel,
+  suggestions,
 }: {
   value: string;
   onChange: (next: string) => void;
   placeholder?: string;
   errored?: boolean;
   ariaLabel?: string;
+  suggestions?: readonly string[];
 }) {
+  const listId = useId();
   return (
-    <input
-      type="text"
-      className={`${styles.input} ${errored ? styles.inputError : ''}`}
-      value={value}
-      onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
-      placeholder={placeholder}
-      aria-label={ariaLabel}
-      spellCheck={false}
-      autoComplete="off"
-      autoCorrect="off"
-      autoCapitalize="off"
-    />
+    <>
+      <input
+        type="text"
+        className={`${styles.input} ${errored ? styles.inputError : ''}`}
+        value={value}
+        onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
+        placeholder={placeholder}
+        aria-label={ariaLabel}
+        spellCheck={false}
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        list={suggestions && suggestions.length > 0 ? listId : undefined}
+      />
+      {suggestions && suggestions.length > 0 ? (
+        <datalist id={listId}>
+          {suggestions.map((s) => (
+            <option key={s} value={s} />
+          ))}
+        </datalist>
+      ) : null}
+    </>
   );
 }
 

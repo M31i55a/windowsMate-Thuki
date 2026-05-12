@@ -505,6 +505,7 @@ pub async fn ask_ollama(
     system_prompt: State<'_, SystemPrompt>,
     active_model_state: State<'_, crate::models::ActiveModelState>,
     ollama_url: State<'_, OllamaUrl>,
+    chat_provider: State<'_, crate::providers::SharedChatProvider>,
 ) -> Result<(), String> {
     let url = ollama_url.0.lock().unwrap().clone();
     let endpoint = format!("{}/api/chat", url.trim_end_matches('/'));
@@ -558,18 +559,129 @@ pub async fn ask_ollama(
         .map_err(|e| e.to_string())?
         .clone()
         .unwrap_or_else(|| "gemma3:4b".to_string());
-    let accumulated = stream_ollama_chat(
-        &endpoint,
-        &active_model,
-        messages,
-        think,
-        &client,
-        cancel_token.clone(),
-        |chunk| {
-            let _ = on_event.send(chunk);
-        },
-    )
-    .await;
+
+    // If a cloud provider is connected, route through it instead of Ollama.
+    let provider_config = chat_provider.0.lock().unwrap().clone();
+    let accumulated = if let Some(ref pc) = provider_config {
+        match pc.provider {
+            crate::providers::Provider::OpenAI | crate::providers::Provider::OpenRouter => {
+                {
+                let result = crate::providers::openai::stream_openai_chat(
+                    &pc.base_url,
+                    &pc.model,
+                    &pc.api_key,
+                    messages,
+                    false,
+                    &client,
+                    cancel_token.clone(),
+                    |chunk| {
+                        let sc = match chunk {
+                            crate::providers::ProviderChunk::Token(t) => Some(StreamChunk::Token(t)),
+                            crate::providers::ProviderChunk::ThinkingToken(t) => Some(StreamChunk::ThinkingToken(t)),
+                            crate::providers::ProviderChunk::Done => Some(StreamChunk::Done),
+                            crate::providers::ProviderChunk::Cancelled => Some(StreamChunk::Cancelled),
+                            crate::providers::ProviderChunk::Error(e) => Some(StreamChunk::Error(OllamaError {
+                                kind: OllamaErrorKind::Other,
+                                message: e,
+                            })),
+                            _ => None,
+                        };
+                        if let Some(sc) = sc {
+                            let _ = on_event.send(sc);
+                        }
+                    },
+                )
+                .await;
+                match result {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let _ = on_event.send(StreamChunk::Error(OllamaError {
+                            kind: OllamaErrorKind::Other,
+                            message: format!("Cloud provider error\n{e}"),
+                        }));
+                        String::new()
+                    }
+                }
+                }
+            }
+            crate::providers::Provider::Anthropic => {
+                let system_content = messages
+                    .first()
+                    .filter(|m| m.role == "system")
+                    .map(|m| m.content.clone())
+                    .unwrap_or_default();
+                {
+                let result = crate::providers::anthropic::stream_anthropic_chat(
+                    &pc.base_url,
+                    &pc.model,
+                    &pc.api_key,
+                    &system_content,
+                    messages,
+                    false,
+                    None,
+                    1920,
+                    1080,
+                    &client,
+                    cancel_token.clone(),
+                    |chunk| {
+                        let sc = match chunk {
+                            crate::providers::ProviderChunk::Token(t) => Some(StreamChunk::Token(t)),
+                            crate::providers::ProviderChunk::ThinkingToken(t) => Some(StreamChunk::ThinkingToken(t)),
+                            crate::providers::ProviderChunk::Done => Some(StreamChunk::Done),
+                            crate::providers::ProviderChunk::Cancelled => Some(StreamChunk::Cancelled),
+                            crate::providers::ProviderChunk::Error(e) => Some(StreamChunk::Error(OllamaError {
+                                kind: OllamaErrorKind::Other,
+                                message: e,
+                            })),
+                            _ => None,
+                        };
+                        if let Some(sc) = sc {
+                            let _ = on_event.send(sc);
+                        }
+                    },
+                )
+                .await;
+                match result {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let _ = on_event.send(StreamChunk::Error(OllamaError {
+                            kind: OllamaErrorKind::Other,
+                            message: format!("Cloud provider error\n{e}"),
+                        }));
+                        String::new()
+                    }
+                }
+                }
+            }
+            crate::providers::Provider::Ollama => {
+                stream_ollama_chat(
+                    &endpoint,
+                    &active_model,
+                    messages,
+                    think,
+                    &client,
+                    cancel_token.clone(),
+                    |chunk| {
+                        let _ = on_event.send(chunk);
+                    },
+                )
+                .await
+            }
+        }
+    } else {
+        stream_ollama_chat(
+            &endpoint,
+            &active_model,
+            messages,
+            think,
+            &client,
+            cancel_token.clone(),
+            |chunk| {
+                let _ = on_event.send(chunk);
+            },
+        )
+        .await
+    };
 
     // Persist user + assistant messages to in-memory history when the epoch
     // has not changed (no reset during streaming) and we received content.

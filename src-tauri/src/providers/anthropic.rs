@@ -136,7 +136,7 @@ pub async fn stream_anthropic_chat(
     cancel_token: CancellationToken,
     mut on_chunk: impl FnMut(ProviderChunk),
 ) -> Result<String, String> {
-    let url = format!("{}/v1/messages", base_url.trim_end_matches('/'));
+    let url = format!("{}/v1/messages", base_url.trim().trim_end_matches('/'));
 
     // Convert Ollama messages to Anthropic format.
     let mut anthropic_messages: Vec<AnthropicMessage> = Vec::new();
@@ -217,7 +217,7 @@ pub async fn stream_anthropic_chat(
 
     let mut req_builder = client
         .post(&url)
-        .header("x-api-key", api_key)
+        .header("x-api-key", api_key.trim())
         .header("anthropic-version", "2023-06-01")
         .header("Content-Type", "application/json");
 

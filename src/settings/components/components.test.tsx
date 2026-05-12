@@ -110,6 +110,33 @@ describe('TextField', () => {
     const el = screen.getByLabelText('t');
     expect(el).toHaveAttribute('placeholder', 'ph');
   });
+
+  it('wires list attribute and datalist when suggestions are provided', () => {
+    render(
+      <TextField
+        value=""
+        onChange={() => {}}
+        ariaLabel="t"
+        suggestions={['alpha', 'beta']}
+      />,
+    );
+    const input = screen.getByLabelText('t');
+    expect(input).toHaveAttribute('list');
+    const listId = input.getAttribute('list')!;
+    expect(document.getElementById(listId)).not.toBeNull();
+  });
+
+  it('does not set list attribute when suggestions are absent', () => {
+    render(<TextField value="" onChange={() => {}} ariaLabel="t" />);
+    expect(screen.getByLabelText('t')).not.toHaveAttribute('list');
+  });
+
+  it('does not set list attribute when suggestions array is empty', () => {
+    render(
+      <TextField value="" onChange={() => {}} ariaLabel="t" suggestions={[]} />,
+    );
+    expect(screen.getByLabelText('t')).not.toHaveAttribute('list');
+  });
 });
 
 describe('Textarea', () => {

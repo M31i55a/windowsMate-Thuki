@@ -68,7 +68,7 @@ const HELPERS = {
   },
   agent: {
     provider:
-      'The AI provider for agent mode. Ollama uses your local models; OpenAI and Anthropic use cloud models (requires API key).',
+      'The AI provider for agent mode. Ollama uses your local models; OpenAI and Anthropic use cloud models (requires API key); OpenRouter routes to any model via a single API key (requires API key).',
     model: 'The model used by the agent. When using Ollama, this can be any locally available model. For cloud providers, choose from the supported models.',
     base_url:
       'The base URL for the agent provider API. Defaults to the standard endpoint for each provider. Change this only if you use a custom proxy or endpoint.',

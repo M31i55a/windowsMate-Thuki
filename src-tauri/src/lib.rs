@@ -732,6 +732,9 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             app.manage(Arc::new(agent::AgentState::new()));
 
+            // ── Shared chat provider (all platforms) ─────────────────
+            app.manage(providers::SharedChatProvider::new());
+
             // ── Gateway state ──────────────────────────────────────────
             app.manage(Arc::new(gateway::GatewayState::new()));
 
@@ -830,6 +833,8 @@ pub fn run() {
             agent::set_agent_provider,
             #[cfg(all(target_os = "windows", not(coverage)))]
             agent::get_agent_provider,
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            agent::validate_openrouter_key,
             #[cfg(all(target_os = "windows", not(coverage)))]
             computer_control::execute_action_command,
             #[cfg(all(target_os = "windows", not(coverage)))]

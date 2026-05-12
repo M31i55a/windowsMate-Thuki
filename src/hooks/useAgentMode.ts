@@ -114,14 +114,6 @@ export function useAgentMode(modelConfig: { active: string } | null): UseAgentMo
 
       unlistenRef.current = unlisten;
 
-      // Check if a cloud provider is configured for agent mode.
-      let providerConfig: { provider: string; model: string; base_url: string; has_api_key: boolean } | null = null;
-      try {
-        providerConfig = await invoke<{ provider: string; model: string; base_url: string; has_api_key: boolean }>('get_agent_provider');
-      } catch {
-        // No provider configured, fall back to Ollama.
-      }
-
       const model = modelConfig?.active ?? 'llama3.2-vision';
       let ollamaUrl: string;
       try {
@@ -130,18 +122,27 @@ export function useAgentMode(modelConfig: { active: string } | null): UseAgentMo
         ollamaUrl = 'http://127.0.0.1:11434';
       }
 
-      // If a cloud provider is configured with an API key, set it before starting.
-      if (providerConfig && providerConfig.provider !== 'ollama' && providerConfig.has_api_key) {
-        try {
+      // Re-sync the in-memory AgentState from persisted config before every run.
+      // This is required because AgentState is reset on app restart, so we must
+      // re-initialize it from the authoritative sources (TOML config + SQLite key)
+      // rather than reading the stale in-memory value from get_agent_provider.
+      try {
+        const [savedConfig, settings] = await Promise.all([
+          invoke<{ agent: { provider: string; model: string; base_url: string } }>('get_config'),
+          invoke<Record<string, string>>('get_settings'),
+        ]);
+        const savedProvider = savedConfig.agent.provider;
+        if (savedProvider && savedProvider !== 'ollama') {
+          const apiKey = settings[`api_key_${savedProvider}`] ?? '';
           await invoke('set_agent_provider', {
-            provider: providerConfig.provider,
-            model: providerConfig.model,
-            baseUrl: providerConfig.base_url,
-            apiKey: '', // Key is already stored in agent state from settings.
+            provider: savedProvider,
+            model: savedConfig.agent.model,
+            baseUrl: savedConfig.agent.base_url,
+            apiKey,
           });
-        } catch {
-          // Ignore, the provider config was already set from settings.
         }
+      } catch {
+        // Fall back to Ollama if config load fails.
       }
 
       try {

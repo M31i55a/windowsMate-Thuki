@@ -64,7 +64,8 @@ export function MinibarView({ status, onClick }: MinibarViewProps) {
       exit={{ opacity: 0, scale: 0.8 }}
       transition={{ duration: 0.15 }}
       onPointerDown={handlePointerDown}
-      className="relative w-12 h-12 rounded-full bg-surface-base cursor-pointer select-none flex items-center justify-center"
+      style={{ backdropFilter: 'blur(12px)', background: 'rgba(32,32,32,0.35)' }}
+      className="relative w-12 h-12 rounded-full cursor-pointer select-none flex items-center justify-center"
       title="ThukiWin — click to restore, drag to move"
     >
       <img
@@ -74,7 +75,7 @@ export function MinibarView({ status, onClick }: MinibarViewProps) {
         draggable={false}
       />
       <span
-        className={`absolute top-0 right-0 w-3 h-3 rounded-full ${dotColor} border-2 border-surface-base ${isPulsing ? 'animate-pulse' : ''}`}
+        className={`absolute top-0 right-0 w-3 h-3 rounded-full ${dotColor} border-2 border-transparent ${isPulsing ? 'animate-pulse' : ''}`}
       />
     </motion.div>
   );
