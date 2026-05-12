@@ -22,12 +22,15 @@ export function DisplayTab({ config, resyncToken, onSaved }: DisplayTabProps) {
   const [transparency, setTransparency] = useState(
     () => Number(localStorage.getItem('thuki-bg-opacity-pct') ?? '92'),
   );
+  const [blur, setBlur] = useState(
+    () => Number(localStorage.getItem('thuki-chat-blur-px') ?? '10'),
+  );
 
   function applyBubbleColor(color: string) {
     setBubbleColor(color);
     localStorage.setItem('thuki-bubble-color', color);
     document.documentElement.style.setProperty('--bubble-color', color);
-    void emit('thuki://appearance', { bubbleColor: color, opacity: null });
+    void emit('thuki://appearance', { bubbleColor: color, opacity: null, blur: null });
   }
 
   function applyTransparency(pct: number) {
@@ -36,7 +39,14 @@ export function DisplayTab({ config, resyncToken, onSaved }: DisplayTabProps) {
     localStorage.setItem('thuki-bg-opacity-pct', String(pct));
     localStorage.setItem('thuki-bg-opacity', opacity);
     document.documentElement.style.setProperty('--app-bg-opacity', opacity);
-    void emit('thuki://appearance', { bubbleColor: null, opacity });
+    void emit('thuki://appearance', { bubbleColor: null, opacity, blur: null });
+  }
+
+  function applyBlur(px: number) {
+    setBlur(px);
+    localStorage.setItem('thuki-chat-blur-px', String(px));
+    document.documentElement.style.setProperty('--chat-bg-blur', `${px}px`);
+    void emit('thuki://appearance', { bubbleColor: null, opacity: null, blur: String(px) });
   }
 
   return (
@@ -138,6 +148,17 @@ export function DisplayTab({ config, resyncToken, onSaved }: DisplayTabProps) {
             unit="%"
             onChange={applyTransparency}
             ariaLabel="Window transparency"
+          />
+        </SettingRow>
+        <SettingRow label="Chat background blur">
+          <NumberSlider
+            value={blur}
+            min={0}
+            max={20}
+            step={1}
+            unit="px"
+            onChange={applyBlur}
+            ariaLabel="Chat background blur"
           />
         </SettingRow>
       </Section>

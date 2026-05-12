@@ -441,13 +441,15 @@ function App() {
   useEffect(() => {
     const color = localStorage.getItem('thuki-bubble-color') ?? '#ff8d5c';
     const opacity = localStorage.getItem('thuki-bg-opacity') ?? '0.92';
+    const blurPx = localStorage.getItem('thuki-chat-blur-px') ?? '10';
     document.documentElement.style.setProperty('--bubble-color', color);
     document.documentElement.style.setProperty('--app-bg-opacity', opacity);
+    document.documentElement.style.setProperty('--chat-bg-blur', `${blurPx}px`);
 
     // Listen for live appearance changes broadcast from the settings window.
     let unlisten: (() => void) | undefined;
     void import('@tauri-apps/api/event').then(({ listen }) => {
-      void listen<{ bubbleColor: string | null; opacity: string | null }>(
+      void listen<{ bubbleColor: string | null; opacity: string | null; blur: string | null }>(
         'thuki://appearance',
         ({ payload }) => {
           if (payload.bubbleColor) {
@@ -455,6 +457,9 @@ function App() {
           }
           if (payload.opacity) {
             document.documentElement.style.setProperty('--app-bg-opacity', payload.opacity);
+          }
+          if (payload.blur !== null && payload.blur !== undefined) {
+            document.documentElement.style.setProperty('--chat-bg-blur', `${payload.blur}px`);
           }
         },
       ).then((fn) => { unlisten = fn; });
@@ -1671,7 +1676,7 @@ function App() {
                   transition:
                     'height 0.35s cubic-bezier(0.16, 1, 0.3, 1), min-height 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
                   background: `rgba(32,32,32,var(--app-bg-opacity, 0.92))`,
-                  backdropFilter: 'blur(20px)',
+                  backdropFilter: 'blur(var(--chat-bg-blur, 10px))',
                 }}
                 className={`morphing-container relative flex flex-col max-h-[600px] overflow-hidden rounded-xl`}
               >

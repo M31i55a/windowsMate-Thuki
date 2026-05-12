@@ -42,6 +42,7 @@
 :root {
   --bubble-color: #ff8d5c;
   --app-bg-opacity: 0.92;
+  --chat-bg-blur: 10px;
 }
 
 html,

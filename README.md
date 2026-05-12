@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  A floating AI secretary for Windows. Fully local, completely free, zero data ever leaves your machine.
+  A floating AI secretary for Windows. Local-first, privacy-first — run fully offline with Ollama, or optionally connect to OpenRouter for cloud models.
 </p>
 
 <p align="center">
@@ -28,9 +28,10 @@
 
 ---
 
-> **Windows port of [Thuki](https://github.com/quiet-node/thuki)** — original macOS app by [Logan Nguyen](https://x.com/quiet_node). This fork brings the full Thuki experience to Windows 10 and 11, with native window controls, Windows-style title bar, adjustable transparency, setting, and a custom chat bubble color picker.
+> **Windows port of [Thuki](https://github.com/quiet-node/thuki)** — original macOS app by [Logan Nguyen](https://x.com/quiet_node). This fork brings the full Thuki experience to Windows 10 and 11, with native window controls, Windows-style title bar, adjustable transparency, a custom chat bubble color picker, online model support (OpenRouter / Anthropic / OpenAI), agent mode (`/do`), Edge TTS voice output, a Gateway API server, and more.
 
-**No API keys. No subscriptions. No cloud. No telemetry. Free forever.**
+**Local mode: no API keys, no subscriptions, no cloud, no telemetry. Free forever.**
+**Online mode: bring your own OpenRouter, Anthropic, or OpenAI key — one optional toggle.**
 
 Mate (based on Thuki — Vietnamese _thư kí_ for secretary) is a lightweight Windows overlay powered by local AI models running entirely on your own machine, built for quick, uninterrupted asks without ever leaving what you're doing.
 
@@ -52,10 +53,11 @@ https://github.com/user-attachments/assets/f52b55f7-479d-4c2e-a361-1553fe132712
 
 Most AI tools require accounts, API keys, or subscriptions that bill you per token. Mate is different:
 
-- **100% free AI interactions:** you run the model locally, there is no per-query cost, ever
-- **Zero trust by design:** no remote server, no cloud backend, no analytics, no telemetry
+- **Local mode is 100% free:** run Ollama locally, no per-query cost, ever
+- **Zero trust by design (local):** no remote server, no cloud backend, no analytics, no telemetry
 - **Works completely offline:** once your model is pulled, Mate runs without an internet connection
 - **Your data is yours:** conversations are stored in a local SQLite database on your machine and nowhere else
+- **Online mode when you need it:** optionally connect OpenRouter, Anthropic, or OpenAI with your own key — you stay in control of what leaves your device
 - **Most importantly: it works everywhere.** Double-tap Control <kbd>Ctrl</kbd> and Mate appears on your desktop, inside a browser, inside a terminal, and even while a game or video is fullscreen. Your favorite AI chat apps can't do that!
 
 ## Features
@@ -65,31 +67,41 @@ Most AI tools require accounts, API keys, or subscriptions that bill you per tok
 - **Throwaway conversations:** fast, lightweight interactions without the overhead of a full chat app
 - **Conversation history:** persist and revisit past conversations across sessions
 - **Fully local LLM:** powered by Ollama; no API keys, no accounts, no cost per query
+- **Online models:** connect OpenRouter (or Anthropic / OpenAI directly) with your own API key for cloud-powered responses — one toggle in the model picker switches between local and online mode
 - **Isolated sandbox:** optionally run models in a hardened Docker container with capability dropping, read-only volumes, and localhost-only networking
 - **Image input:** paste or drag images and screenshots directly into the chat
 - **Screen capture:** type `/screen` to instantly capture your entire screen and attach it to your question as context
+- **Agent mode:** type `/do` to let Mate autonomously control your desktop — launch apps, type text, press key combos, and complete multi-step tasks. Works with both vision and text-only local models; cloud providers ask for screenshot consent before sending any screen data off-device
 - **Agentic search:** type `/search` to run a fully local, multi-step search pipeline (SearXNG + Trafilatura reader) with a live trace of every query, fetch, and judgement step
-- **Slash commands:** built-in commands for live search and prompt shortcuts: `/search`, `/translate`, `/rewrite`, `/tldr`, `/refine`, `/bullets`, `/todos`. Highlight text anywhere, summon Mate, type a command, and hit Enter
+- **Slash commands:** built-in commands for live search and prompt shortcuts: `/do`, `/search`, `/screen`, `/think`, `/translate`, `/rewrite`, `/tldr`, `/refine`, `/bullets`, `/todos`. Highlight text anywhere, summon Mate, type a command, and hit Enter
 - **Extended reasoning:** type `/think` to have the model reason through a problem step by step before answering
-- **In-app model picker:** browse the models installed in your local Ollama and switch the active model from the ask bar or chat header without ever opening a config file
+- **Voice output (TTS):** click the speaker icon on any assistant message to have it read aloud using Microsoft Edge Neural TTS — pick from a rich set of voices in Settings → Sound
+- **In-app model picker:** browse models installed in your local Ollama and switch the active model from the ask bar or chat header without opening a config file; online models from OpenRouter are listed alongside local ones
 - **Cross-model continuity:** swap models mid-conversation and Mate sanitizes history and filters capabilities (vision, thinking) to whatever the new model supports
-- **Settings panel:** a multi-tab native window for inference, prompt, window, search, and appearance settings, including a log-scale context-window slider and a tunable image-attachment cap (up to 20)
+- **Gateway API server:** expose Mate's inference backend as a local OpenAI-compatible HTTP endpoint for use by other tools
+- **Settings panel:** a multi-tab native window (AI, Web, Display, Agent, Gateway, Sound, About) for inference, prompt, window, search, appearance, TTS, and gateway settings
 - **Chat bubble color:** pick any accent color for your chat bubbles — the scrollbar and UI highlights adapt automatically
 - **Window transparency:** set the overlay background opacity (50–100%) directly from the Appearance settings tab
+- **Chat background blur:** tune the frosted-glass blur (0–20 px) behind the chat area from the Appearance settings tab
 - **Contextual tip bar:** lightweight in-overlay hints surface the right shortcut or command at the right moment
-- **Privacy-first:** zero-trust architecture, all data stays on your device
+- **Privacy-first:** local mode is fully air-gapped; online mode shows explicit consent prompts before any screen data leaves your device
 
 ## Windows-Specific Additions
 
 This port adds several Windows-native improvements on top of the original Thuki:
 
-| Feature                      | Details                                                                                            |
-| ---------------------------- | -------------------------------------------------------------------------------------------------- |
-| **Native Windows title bar** | Minimize button with Windows-style controls alongside macOS-style traffic-light dots               |
-| **Chat bubble color picker** | Choose any accent color; scrollbar tint and highlights update in real time                         |
-| **Adjustable transparency**  | Slide window background opacity from 50% to 100% in the Appearance settings tab                    |
-| **Narrower chrome**          | Tighter padding on the overlay and chat area for a denser, more focused layout                     |
-| **Header model chip**        | Active model displayed as a compact chip in the chat header — click to switch without leaving chat |
+| Feature                      | Details                                                                                                                      |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| **Native Windows title bar** | Minimize button with Windows-style controls alongside macOS-style traffic-light dots                                         |
+| **Chat bubble color picker** | Choose any accent color; scrollbar tint and highlights update in real time                                                   |
+| **Adjustable transparency**  | Slide window background opacity from 50% to 100% in the Appearance settings tab                                              |
+| **Chat background blur**     | Tune the frosted-glass blur (0–20 px) behind the chat area in the Appearance settings tab                                    |
+| **Online model support**     | Connect OpenRouter, Anthropic, or OpenAI with your own key; switch between local and online in the model picker              |
+| **Agent mode (`/do`)**       | Autonomous desktop control — launches apps, types text, presses keys; cloud providers ask consent before sending screenshots |
+| **Edge TTS voice output**    | Read any assistant message aloud; choose from Neural voices in Settings → Sound                                              |
+| **Gateway API server**       | Expose Mate's backend as a local OpenAI-compatible HTTP endpoint for third-party tools                                       |
+| **Narrower chrome**          | Tighter padding on the overlay and chat area for a denser, more focused layout                                               |
+| **Header model chip**        | Active model displayed as a compact chip in the chat header — click to switch without leaving chat                           |
 
 ## Getting Started
 
@@ -144,6 +156,16 @@ bun run sandbox:stop
 ```
 
 For the full architecture and security philosophy behind the sandbox, see [`sandbox/README.md`](sandbox/README.md).
+
+#### Option C: Online Models via OpenRouter (No local install needed)
+
+If you prefer not to install Ollama, you can use cloud models instead. Mate integrates with **[OpenRouter](https://openrouter.ai)**, giving you access to GPT-4o, Claude Sonnet 4, Gemini 2.5, Llama 4, DeepSeek R1, and more.
+
+1. Create a free account at [openrouter.ai](https://openrouter.ai) and copy your API key.
+2. Launch Mate, open the model picker, and switch to **Online** mode.
+3. Paste your API key and pick a model. Done — no local setup required.
+
+> **Privacy note:** In online mode, your messages are sent to the selected cloud provider. For `/screen` screenshots and agent mode (`/do`) screenshots, Mate will ask for explicit consent before sending any screen data off-device.
 
 ### Step 2: Setup the search sandbox (Optional, required for /search)
 
@@ -243,16 +265,16 @@ Mate inherits the Thuki roadmap and adds Windows-specific improvements:
 ### Secretary Superpowers
 
 - **Tool integrations via [MCP](https://modelcontextprotocol.io/):** connect Mate to Gmail, Slack, Discord, Google Calendar, and any other MCP-compatible service
-- **More slash commands:** expanding the existing `/search`, `/screen`, `/think`, `/translate`, `/rewrite`, `/tldr`, `/refine`, `/bullets`, and `/todos` set
+- **More slash commands:** expanding the existing `/do`, `/search`, `/screen`, `/think`, `/translate`, `/rewrite`, `/tldr`, `/refine`, `/bullets`, and `/todos` set
 
 ### Better AI Control
 
-- **Multiple provider support:** opt in to OpenAI, Anthropic, or any OpenAI-compatible endpoint as an alternative to local Ollama
 - **Custom activation shortcut:** change the double-tap trigger to any key or combo you prefer
+- **More online providers:** additional cloud backends beyond OpenRouter, Anthropic, and OpenAI
 
 ### Richer Context
 
-- **Voice input:** dictate your question instead of typing
+- **Voice input:** dictate your question instead of typing (TTS output already works — STT is next)
 - **Auto-capture screen context:** activate Mate and have it automatically read the active window or selected region as context
 - **File and document drop:** drag a PDF, image, or text file directly into Mate as context for your question
 
