@@ -275,6 +275,13 @@ function App() {
   const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);
   const modelPickerPanelRef = useRef<HTMLDivElement>(null);
 
+  /**
+   * When the user submits while an online provider is active and hasn't yet
+   * acknowledged the privacy warning this session, we park the real submit
+   * action here and show the warning strip instead.
+   */
+  const [pendingOnlineSubmit, setPendingOnlineSubmit] = useState<(() => void) | null>(null);
+
   const handleModelPickerToggle = useCallback(() => {
     setIsModelPickerOpen((prev) => !prev);
   }, []);
@@ -1063,6 +1070,22 @@ function App() {
     )
       return;
 
+    // Show a one-time-per-session privacy warning before the first cloud message.
+    if (provider.mode === 'openrouter' && !sessionStorage.getItem('onlinePrivacyAcked')) {
+      // Park a continuation: ack + re-run submit on confirm.
+      // We capture the current submit by storing a callback ref that will be
+      // invoked when the user clicks "I understand — Send".
+      const proceed = () => {
+        sessionStorage.setItem('onlinePrivacyAcked', '1');
+        setPendingOnlineSubmit(null);
+        // Re-trigger the submit now that the ack is in sessionStorage.
+        // setTimeout(0) lets the state flush before handleSubmit checks the flag.
+        setTimeout(handleSubmit, 0);
+      };
+      setPendingOnlineSubmit(() => proceed);
+      return;
+    }
+
     // Clear any stale capture error and capability conflicts from a previous attempt.
     setCaptureError(null);
     setCapabilityConflicts([]);
@@ -1739,6 +1762,39 @@ function App() {
                     <p className="text-red-400 text-xs leading-relaxed">
                       {captureError}
                     </p>
+                  </div>
+                )}
+
+                {/* Online provider privacy warning — shown once per session
+                    when the user tries to send while a cloud provider is active. */}
+                {pendingOnlineSubmit && (
+                  <div className="px-4 py-3 border-t border-amber-500/20 bg-amber-500/5 flex flex-col gap-2.5">
+                    <div className="flex items-start gap-2">
+                      <svg className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-400" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                        <path d="M8 2L14 13H2L8 2Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+                        <path d="M8 7v3M8 11.5v.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                      </svg>
+                      <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                        <span className="font-medium text-amber-300">Your message will leave this device.</span>{' '}
+                        Using <span className="font-medium">{provider.openRouter?.model ?? 'an online model'}</span> sends your conversation to OpenRouter's servers. Do not share sensitive or personal data.
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => { pendingOnlineSubmit(); }}
+                        className="flex-1 py-1.5 rounded-lg text-[11px] font-medium bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 transition-colors duration-120 cursor-pointer outline-none"
+                      >
+                        I understand — Send
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPendingOnlineSubmit(null)}
+                        className="flex-1 py-1.5 rounded-lg text-[11px] text-text-secondary hover:bg-white/5 transition-colors duration-120 cursor-pointer outline-none"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
                 )}
 
