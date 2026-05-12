@@ -28,7 +28,7 @@
 
 ---
 
-> **Windows port of [Thuki](https://github.com/quiet-node/thuki)** — original macOS app by [Logan Nguyen](https://x.com/quiet_node). This fork brings the full Thuki experience to Windows 10 and 11, with native window controls, Windows-style title bar, adjustable transparency, and a custom chat bubble color picker.
+> **Windows port of [Thuki](https://github.com/quiet-node/thuki)** — original macOS app by [Logan Nguyen](https://x.com/quiet_node). This fork brings the full Thuki experience to Windows 10 and 11, with native window controls, Windows-style title bar, adjustable transparency, setting, and a custom chat bubble color picker.
 
 **No API keys. No subscriptions. No cloud. No telemetry. Free forever.**
 
