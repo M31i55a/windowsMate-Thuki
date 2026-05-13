@@ -42,7 +42,7 @@ tauri-plugin-notification = "2"
 parking_lot = "0.12"
 toml = "0.9"
 toml_edit = "0.25"
-thiserror = "1"
+thiserror = "2"
 html-escape = "0.2"
 time = { version = "0.3", features = ["std"] }
 async-trait = "0.1"
