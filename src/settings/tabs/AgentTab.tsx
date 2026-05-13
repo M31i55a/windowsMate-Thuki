@@ -56,7 +56,8 @@ const OPENROUTER_MODELS = [
   'x-ai/grok-3',
   'google/gemma-4-31b-it:free',
   'google/gemma-4-26b-a4b-it:free',
-  'nvidia/llama-nemotron-embed-vl-1b-v2:free',
+  'inclusionai/ring-2.6-1t:free',
+  'arcee-ai/trinity-large-thinking:free',
 ] as const;
 
 interface AgentTabProps {

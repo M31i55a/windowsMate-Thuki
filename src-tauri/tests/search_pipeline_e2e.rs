@@ -16,13 +16,13 @@ use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use thuki_agent_lib::commands::ConversationHistory;
-use thuki_agent_lib::config::defaults::DEFAULT_NUM_CTX;
-use thuki_agent_lib::search::{
+use windows_mate_thuki_lib::commands::ConversationHistory;
+use windows_mate_thuki_lib::config::defaults::DEFAULT_NUM_CTX;
+use windows_mate_thuki_lib::search::{
     run_agentic, Action, JudgeCaller, JudgeSource, JudgeVerdict, RouterJudgeCaller,
     RouterJudgeOutput, SearchError, SearchEvent, SearchMetadata, SearchWarning, Sufficiency,
 };
-use thuki_agent_lib::trace::{
+use windows_mate_thuki_lib::trace::{
     BoundRecorder, ConversationId, FileRecorder, NoopRecorder, TraceDomain, TraceRecorder,
 };
 
@@ -94,7 +94,7 @@ struct MockRouter(RouterJudgeOutput);
 impl RouterJudgeCaller for MockRouter {
     async fn call(
         &self,
-        _history: &[thuki_agent_lib::commands::ChatMessage],
+        _history: &[windows_mate_thuki_lib::commands::ChatMessage],
         _query: &str,
     ) -> Result<RouterJudgeOutput, SearchError> {
         Ok(self.0.clone())
@@ -121,7 +121,7 @@ impl JudgeCaller for QueueJudge {
         &self,
         _query: &str,
         _sources: &[JudgeSource],
-        _stage: thuki_agent_lib::search::JudgeStage,
+        _stage: windows_mate_thuki_lib::search::JudgeStage,
     ) -> Result<JudgeVerdict, SearchError> {
         self.0
             .lock()
@@ -255,7 +255,7 @@ async fn happy_path_snippets_sufficient_streams_answer() {
         &cb,
         &router,
         &judge,
-        &thuki_agent_lib::search::config::SearchRuntimeConfig::default(),
+        &windows_mate_thuki_lib::search::config::SearchRuntimeConfig::default(),
         DEFAULT_NUM_CTX,
         &opt_trace_recorder("happy_path_snippets_sufficient"),
     )
@@ -392,7 +392,7 @@ async fn reader_escalation_with_chunks_sufficient() {
         &cb,
         &router,
         &judge,
-        &thuki_agent_lib::search::config::SearchRuntimeConfig::default(),
+        &windows_mate_thuki_lib::search::config::SearchRuntimeConfig::default(),
         DEFAULT_NUM_CTX,
         &opt_trace_recorder("reader_escalation_chunks_sufficient"),
     )
@@ -477,7 +477,7 @@ async fn reader_unavailable_degrades_to_snippets_and_warns() {
         &cb,
         &router,
         &judge,
-        &thuki_agent_lib::search::config::SearchRuntimeConfig::default(),
+        &windows_mate_thuki_lib::search::config::SearchRuntimeConfig::default(),
         DEFAULT_NUM_CTX,
         &opt_trace_recorder("reader_unavailable_degrades_to_snippets"),
     )
@@ -580,7 +580,7 @@ async fn exhausted_gap_loop_warns_iteration_cap_and_streams_fallback() {
         &cb,
         &router,
         &judge,
-        &thuki_agent_lib::search::config::SearchRuntimeConfig::default(),
+        &windows_mate_thuki_lib::search::config::SearchRuntimeConfig::default(),
         DEFAULT_NUM_CTX,
         &opt_trace_recorder("exhausted_gap_loop_warns_iteration_cap"),
     )
@@ -676,7 +676,7 @@ async fn cancel_midloop_does_not_persist_and_emits_cancelled() {
         &cb,
         &router,
         &judge,
-        &thuki_agent_lib::search::config::SearchRuntimeConfig::default(),
+        &windows_mate_thuki_lib::search::config::SearchRuntimeConfig::default(),
         DEFAULT_NUM_CTX,
         &opt_trace_recorder("cancel_midloop_does_not_persist"),
     )
@@ -699,3 +699,4 @@ async fn cancel_midloop_does_not_persist_and_emits_cancelled() {
         "conversation history must be empty after cancel"
     );
 }
+
