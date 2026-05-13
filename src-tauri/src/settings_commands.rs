@@ -56,7 +56,7 @@ use crate::config::{
 /// backend-side consumers (e.g. `ask_ollama` reading `State<RwLock<AppConfig>>` per
 /// invocation) see config edits; frontend-driven values like window dims
 /// stay frozen at the mount-time snapshot.
-pub const CONFIG_UPDATED_EVENT: &str = "thuki://config-updated";
+pub const CONFIG_UPDATED_EVENT: &str = "mate://config-updated";
 
 /// Emits `CONFIG_UPDATED_EVENT` to every webview. Errors are intentionally
 /// swallowed: an emit failure must not break a successful disk write.

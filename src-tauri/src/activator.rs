@@ -217,7 +217,7 @@ where
 
             TapExitReason::TapDied => {
                 // Tap was running then killed by macOS. Reinstall immediately.
-                eprintln!("thuki: [activator] tap died - reinstalling");
+                eprintln!("mate: [activator] tap died - reinstalling");
                 permission_failures = 0;
             }
 
@@ -225,13 +225,13 @@ where
                 permission_failures += 1;
                 if permission_failures >= MAX_PERMISSION_ATTEMPTS {
                     eprintln!(
-                        "thuki: [error] activation listener failed after \
+                        "mate: [error] activation listener failed after \
                          maximum retries; check system permissions."
                     );
                     return;
                 }
                 eprintln!(
-                    "thuki: [activator] tap creation failed \
+                    "mate: [activator] tap creation failed \
                      (attempt {permission_failures}/{MAX_PERMISSION_ATTEMPTS}); \
                      retrying in {}s",
                     PERMISSION_POLL_INTERVAL.as_secs()
@@ -292,7 +292,7 @@ where
                 CGEventType::TapDisabledByTimeout | CGEventType::TapDisabledByUserInput
             ) {
                 eprintln!(
-                    "thuki: [activator] event tap disabled by macOS \
+                    "mate: [activator] event tap disabled by macOS \
                      ({event_type:?}) - stopping run loop for reinstall"
                 );
                 CFRunLoop::get_current().stop();
@@ -338,7 +338,7 @@ where
 
                 CFRunLoop::run_current();
             }
-            eprintln!("thuki: [activator] event tap run loop exited");
+            eprintln!("mate: [activator] event tap run loop exited");
             // If still supposed to be active the run loop exited unexpectedly.
             if is_active.load(Ordering::SeqCst) {
                 TapExitReason::TapDied
@@ -348,7 +348,7 @@ where
         }
         Err(()) => {
             eprintln!(
-                "thuki: [activator] event tap creation FAILED; check Accessibility permission"
+                "mate: [activator] event tap creation FAILED; check Accessibility permission"
             );
             TapExitReason::CreationFailed
         }

@@ -46,8 +46,8 @@ import './App.css';
 /** Fallback model name used before get_model_config resolves at startup. */
 const DEFAULT_MODEL_FALLBACK = 'gemini-3-flash-preview';
 
-const OVERLAY_VISIBILITY_EVENT = 'thuki://visibility';
-const ONBOARDING_EVENT = 'thuki://onboarding';
+const OVERLAY_VISIBILITY_EVENT = 'mate://visibility';
+const ONBOARDING_EVENT = 'mate://onboarding';
 
 /**
  * Authoritative deadline from the start of the hide transition to the native
@@ -103,7 +103,7 @@ type OverlayVisibilityPayload =
 type OverlayState = 'visible' | 'hidden' | 'hiding' | 'minibar';
 
 /**
- * Main application orchestrator for Thuki.
+ * Main application orchestrator for windowsMate - Thuki.
  *
  * Implements an adaptive morphing UI container. It starts as a minimal spotlight-style
  * input bar (`AskBarView`), then smoothly transforms into a full chat window
@@ -439,9 +439,9 @@ function App() {
 
   /** Apply appearance CSS vars from localStorage on mount. */
   useEffect(() => {
-    const color = localStorage.getItem('thuki-bubble-color') ?? '#ff8d5c';
-    const opacity = localStorage.getItem('thuki-bg-opacity') ?? '0.92';
-    const blurPx = localStorage.getItem('thuki-chat-blur-px') ?? '10';
+    const color = localStorage.getItem('mate-bubble-color') ?? '#ff8d5c';
+    const opacity = localStorage.getItem('mate-bg-opacity') ?? '0.92';
+    const blurPx = localStorage.getItem('mate-chat-blur-px') ?? '10';
     document.documentElement.style.setProperty('--bubble-color', color);
     document.documentElement.style.setProperty('--app-bg-opacity', opacity);
     document.documentElement.style.setProperty('--chat-bg-blur', `${blurPx}px`);
@@ -450,7 +450,7 @@ function App() {
     let unlisten: (() => void) | undefined;
     void import('@tauri-apps/api/event').then(({ listen }) => {
       void listen<{ bubbleColor: string | null; opacity: string | null; blur: string | null }>(
-        'thuki://appearance',
+        'mate://appearance',
         ({ payload }) => {
           if (payload.bubbleColor) {
             document.documentElement.style.setProperty('--bubble-color', payload.bubbleColor);
@@ -984,7 +984,7 @@ function App() {
   /**
    * Async handler for the `/screen` command path. Invokes the Rust
    * `capture_full_screen_command`, which silently captures the screen
-   * (excluding Thuki's own windows) and returns the saved file path.
+   * (excluding Mate's own windows) and returns the saved file path.
    * On success, merges the screenshot path with any manually attached
    * images and calls ask(). On error, restores the query so no input is lost.
    */
@@ -1452,7 +1452,7 @@ function App() {
           setOnboardingStage(payload.stage);
         },
       );
-      unlistenMinibar = await listen('thuki://minibar', () => {
+      unlistenMinibar = await listen('mate://minibar', () => {
         setOverlayState((prev) => {
           if (prev === 'visible' || prev === 'hiding') {
             void invoke('enter_minibar_size');

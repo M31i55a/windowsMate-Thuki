@@ -72,7 +72,7 @@ export function useAgentMode(
       const unlisten = await listen<{
         type: string;
         data?: unknown;
-      }>('thuki://agent', (event) => {
+      }>('mate://agent', (event) => {
         const { type, data } = event.payload as { type: string; data?: unknown };
 
         switch (type) {

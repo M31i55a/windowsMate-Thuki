@@ -25,7 +25,7 @@ describe('generated command artifacts', () => {
     const appendix = renderSlashCommandPromptAppendix();
 
     expect(appendix).toContain(
-      "These are Thuki's only built-in slash commands:",
+      "These are Mate's only built-in slash commands:",
     );
     expect(appendix).toContain(
       'If the user asks what slash commands are available, what built-in commands exist, or how to use them, answer with the slash-command list below.',

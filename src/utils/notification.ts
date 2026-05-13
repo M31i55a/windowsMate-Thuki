@@ -90,7 +90,7 @@ function playCustomSound(): void {
  * Call this when an AI response finishes streaming. The notification lets the
  * user know the response is ready even if they have switched to another app.
  *
- * @param title   Notification title (e.g. "ThukiWin")
+ * @param title   Notification title (e.g. "windowsMate - Thuki")
  * @param body    Notification body text (e.g. "Response ready")
  */
 export async function notifyIfUnfocused(

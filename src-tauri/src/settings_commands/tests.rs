@@ -783,7 +783,7 @@ fn tempdir() -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    let dir = std::env::temp_dir().join(format!("thuki-settings-cmd-{pid}-{nanos}-{n}"));
+    let dir = std::env::temp_dir().join(format!("mate-settings-cmd-{pid}-{nanos}-{n}"));
     std::fs::create_dir_all(&dir).expect("create tempdir");
     dir
 }

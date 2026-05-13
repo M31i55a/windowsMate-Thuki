@@ -32,7 +32,7 @@ use super::writer::atomic_write;
 /// Creates a fresh temp directory that is unique per test run. Returned paths
 /// live inside `std::env::temp_dir()/thuki-config-tests-<uuid>/`.
 fn fresh_temp_dir() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("thuki-config-tests-{}", uuid::Uuid::new_v4()));
+    let dir = std::env::temp_dir().join(format!("mate-config-tests-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).expect("create temp dir");
     dir
 }

@@ -4514,41 +4514,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "thuki"
-version = "0.5.0"
-dependencies = [
- "async-trait",
- "axum",
- "base64 0.22.1",
- "dirs",
- "eventsource-stream",
- "futures-util",
- "html-escape",
- "image",
- "mockito",
- "parking_lot",
- "reqwest",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "tauri",
- "tauri-build",
- "tauri-plugin-notification",
- "thiserror 1.0.69",
- "time",
- "tokio",
- "tokio-tungstenite",
- "tokio-util",
- "toml 0.9.12+spec-1.1.0",
- "toml_edit 0.25.5+spec-1.1.0",
- "tower-http",
- "uuid",
- "windows",
- "wiremock",
-]
-
-[[package]]
 name = "time"
 version = "0.3.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5518,6 +5483,41 @@ name = "windows-link"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
+
+[[package]]
+name = "windows-mate-thuki"
+version = "0.5.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "dirs",
+ "eventsource-stream",
+ "futures-util",
+ "html-escape",
+ "image",
+ "mockito",
+ "parking_lot",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-notification",
+ "thiserror 1.0.69",
+ "time",
+ "tokio",
+ "tokio-tungstenite",
+ "tokio-util",
+ "toml 0.9.12+spec-1.1.0",
+ "toml_edit 0.25.5+spec-1.1.0",
+ "tower-http",
+ "uuid",
+ "windows",
+ "wiremock",
+]
 
 [[package]]
 name = "windows-numerics"

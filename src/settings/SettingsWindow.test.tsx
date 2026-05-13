@@ -184,7 +184,7 @@ describe('SettingsWindow', () => {
 
   it('renders the corrupt-recovery banner when get_corrupt_marker returns one', async () => {
     const marker: CorruptMarker = {
-      path: '/Users/x/Library/Application Support/com.quietnode.thuki/config.toml.corrupt-99',
+      path: '/Users/x/Library/Application Support/com.windowsmate.thuki/config.toml.corrupt-99',
       ts: 99,
     };
     invokeMock.mockImplementation(async (cmd: string) => {

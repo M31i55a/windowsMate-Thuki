@@ -16,7 +16,7 @@ export const OLLAMA_LIBRARY_URL = 'https://ollama.com/library';
  * the full sentence in one read.
  */
 export const OLLAMA_PILL_TOOLTIP =
-  'Browse and pull any model on Ollama. Thuki auto-detects it.';
+  'Browse and pull any model on Ollama. Mate auto-detects it.';
 
 const CHECK_ICON_PATH = (
   <path
@@ -28,7 +28,7 @@ const CHECK_ICON_PATH = (
   />
 );
 
-const LISTBOX_ID = 'thuki-model-picker-listbox';
+const LISTBOX_ID = 'mate-model-picker-listbox';
 
 /**
  * Builds the capability caption rendered beneath each picker row's model

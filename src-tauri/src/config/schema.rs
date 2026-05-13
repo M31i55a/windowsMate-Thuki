@@ -224,7 +224,7 @@ impl Default for DebugSection {
 
 /// Local gateway configuration.
 ///
-/// ThukiWin can expose an OpenAI-compatible HTTP server that proxies requests
+/// windowsMate - Thuki can expose an OpenAI-compatible HTTP server that proxies requests
 /// to Ollama, translating between API formats. This is useful for tools that
 /// expect an OpenAI API endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -247,7 +247,7 @@ impl Default for GatewaySection {
 
 /// Text-to-speech configuration.
 ///
-/// ThukiWin uses Microsoft Edge Read Aloud service for TTS. Voice names follow
+/// windowsMate - Thuki uses Microsoft Edge Read Aloud service for TTS. Voice names follow
 /// the Microsoft naming convention (e.g. "tr-TR-EmelNeural", "en-US-AvaNeural").
 /// Rate and pitch are percentage offsets from default: -100 to +100.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

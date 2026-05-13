@@ -474,7 +474,7 @@ describe('ModelTab', () => {
     });
     fireEvent.click(tuneButton);
     expect(invokeMock).toHaveBeenCalledWith('open_url', {
-      url: 'https://github.com/quiet-node/thuki/blob/main/docs/tuning-context-window.md#the-5-minute-benchmark-recipe',
+      url: 'https://github.com/ayzekhdawy/windowsMate-Thuki/blob/main/docs/tuning-context-window.md#the-5-minute-benchmark-recipe',
     });
   });
 
@@ -718,7 +718,7 @@ describe('AboutTab', () => {
 
   it('renders the centered hero with title, version, and tagline', async () => {
     await renderAbout();
-    expect(screen.getByText('Thuki')).toBeInTheDocument();
+    expect(screen.getByText('windowsMate - Thuki')).toBeInTheDocument();
     expect(screen.getByText(/A floating, local-first AI/)).toBeInTheDocument();
     expect(
       screen.getByText(/No cloud\. No clutter\. Just answers\./),
@@ -753,7 +753,7 @@ describe('AboutTab', () => {
       screen.getByRole('button', { name: /release notes on GitHub/ }),
     );
     expect(invokeMock).toHaveBeenCalledWith('open_url', {
-      url: 'https://github.com/quiet-node/thuki/releases/tag/nightly',
+      url: 'https://github.com/ayzekhdawy/windowsMate-Thuki/releases/tag/nightly',
     });
     vi.unstubAllEnvs();
   });
@@ -761,10 +761,10 @@ describe('AboutTab', () => {
   it('GitHub icon button opens the repo', async () => {
     await renderAbout();
     fireEvent.click(
-      screen.getByRole('button', { name: 'View Thuki on GitHub' }),
+      screen.getByRole('button', { name: 'View windowsMate - Thuki on GitHub' }),
     );
     expect(invokeMock).toHaveBeenCalledWith('open_url', {
-      url: 'https://github.com/quiet-node/thuki',
+      url: 'https://github.com/ayzekhdawy/windowsMate-Thuki',
     });
   });
 
@@ -782,15 +782,15 @@ describe('AboutTab', () => {
     await renderAbout();
     fireEvent.click(screen.getByRole('button', { name: /Open an issue/ }));
     expect(invokeMock).toHaveBeenCalledWith('open_url', {
-      url: 'https://github.com/quiet-node/thuki/issues',
+      url: 'https://github.com/ayzekhdawy/windowsMate-Thuki/issues',
     });
   });
 
-  it('Reveal Thuki app data invokes reveal_config_in_finder', async () => {
+  it('Reveal Mate app data invokes reveal_config_in_finder', async () => {
     await renderAbout();
-    await waitFor(() => screen.getByText(/Reveal Thuki app data/));
+    await waitFor(() => screen.getByText(/Reveal Mate app data/));
     fireEvent.click(
-      screen.getByRole('button', { name: /Reveal Thuki app data/ }),
+      screen.getByRole('button', { name: /Reveal Mate app data/ }),
     );
     expect(invokeMock).toHaveBeenCalledWith('reveal_config_in_finder');
   });

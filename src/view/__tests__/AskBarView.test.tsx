@@ -42,7 +42,7 @@ describe('AskBarView', () => {
         inputRef={makeRef()}
       />,
     );
-    const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+    const textarea = screen.getByPlaceholderText('Ask Mate anything...');
     expect(textarea).not.toBeNull();
   });
 
@@ -77,7 +77,7 @@ describe('AskBarView', () => {
         inputRef={makeRef()}
       />,
     );
-    const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+    const textarea = screen.getByPlaceholderText('Ask Mate anything...');
     fireEvent.change(textarea, { target: { value: 'hello' } });
     expect(setQuery).toHaveBeenCalledWith('hello');
   });
@@ -95,7 +95,7 @@ describe('AskBarView', () => {
         inputRef={makeRef()}
       />,
     );
-    const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+    const textarea = screen.getByPlaceholderText('Ask Mate anything...');
     expect((textarea as HTMLTextAreaElement).disabled).toBe(true);
   });
 
@@ -113,7 +113,7 @@ describe('AskBarView', () => {
         inputRef={makeRef()}
       />,
     );
-    const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+    const textarea = screen.getByPlaceholderText('Ask Mate anything...');
     fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
@@ -132,7 +132,7 @@ describe('AskBarView', () => {
         inputRef={makeRef()}
       />,
     );
-    const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+    const textarea = screen.getByPlaceholderText('Ask Mate anything...');
     fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true });
     expect(onSubmit).not.toHaveBeenCalled();
   });
@@ -168,7 +168,7 @@ describe('AskBarView', () => {
         inputRef={makeRef()}
       />,
     );
-    const logo = container.querySelector('img[alt="Thuki"]');
+    const logo = container.querySelector('img[alt="Mate"]');
     expect(logo).not.toBeNull();
     expect(logo?.classList.contains('w-10')).toBe(true);
     expect(logo?.classList.contains('h-10')).toBe(true);
@@ -188,7 +188,7 @@ describe('AskBarView', () => {
         inputRef={makeRef()}
       />,
     );
-    const logo = container.querySelector('img[alt="Thuki"]');
+    const logo = container.querySelector('img[alt="Mate"]');
     expect(logo).not.toBeNull();
     expect(logo?.classList.contains('w-6')).toBe(true);
     expect(logo?.classList.contains('h-6')).toBe(true);
@@ -749,7 +749,7 @@ describe('AskBarView', () => {
             inputRef={makeRef()}
           />,
         );
-        const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+        const textarea = screen.getByPlaceholderText('Ask Mate anything...');
         const file = new File(['x'], 'img.png', { type: 'image/png' });
         fireEvent.paste(textarea, {
           clipboardData: {
@@ -780,7 +780,7 @@ describe('AskBarView', () => {
             inputRef={makeRef()}
           />,
         );
-        const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+        const textarea = screen.getByPlaceholderText('Ask Mate anything...');
         const file = new File(['x'], 'img.png', { type: 'image/png' });
         fireEvent.paste(textarea, {
           clipboardData: {
@@ -815,7 +815,7 @@ describe('AskBarView', () => {
             inputRef={makeRef()}
           />,
         );
-        const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+        const textarea = screen.getByPlaceholderText('Ask Mate anything...');
         fireEvent.paste(textarea, {
           clipboardData: {
             items: [{ type: 'text/plain', getAsFile: () => null }],
@@ -840,7 +840,7 @@ describe('AskBarView', () => {
           inputRef={makeRef()}
         />,
       );
-      const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
       const file = new File(['fake-img'], 'test.png', { type: 'image/png' });
       const clipboardData = {
         items: [{ type: 'image/png', getAsFile: () => file }],
@@ -867,7 +867,7 @@ describe('AskBarView', () => {
           inputRef={makeRef()}
         />,
       );
-      const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
       const clipboardData = {
         items: [{ type: 'text/plain', getAsFile: () => null }],
       };
@@ -890,7 +890,7 @@ describe('AskBarView', () => {
           inputRef={makeRef()}
         />,
       );
-      const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
       fireEvent.paste(textarea, { clipboardData: { items: null } });
       expect(onImagesAttached).not.toHaveBeenCalled();
     });
@@ -910,7 +910,7 @@ describe('AskBarView', () => {
           inputRef={makeRef()}
         />,
       );
-      const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
       const file = new File(['x'], 'img.png', { type: 'image/png' });
       const clipboardData = {
         items: [{ type: 'image/png', getAsFile: () => file }],
@@ -934,7 +934,7 @@ describe('AskBarView', () => {
           inputRef={makeRef()}
         />,
       );
-      const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
       const clipboardData = {
         items: [{ type: 'image/png', getAsFile: () => null }],
       };
@@ -963,7 +963,7 @@ describe('AskBarView', () => {
           inputRef={makeRef()}
         />,
       );
-      const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
       const file = new File(['x'], 'img.png', { type: 'image/png' });
       const clipboardData = {
         items: [{ type: 'image/png', getAsFile: () => file }],
@@ -1254,7 +1254,7 @@ describe('AskBarView', () => {
           inputRef={makeRef()}
         />,
       );
-      const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
       expect((textarea as HTMLTextAreaElement).disabled).toBe(true);
     });
 
@@ -1274,7 +1274,7 @@ describe('AskBarView', () => {
           inputRef={makeRef()}
         />,
       );
-      const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
       const file = new File(['x'], 'img.png', { type: 'image/png' });
       const clipboardData = {
         items: [{ type: 'image/png', getAsFile: () => file }],
@@ -1352,7 +1352,7 @@ describe('AskBarView', () => {
           inputRef={makeRef()}
         />,
       );
-      const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
       fireEvent.keyDown(textarea, { key: 'Tab' });
       expect(setQuery).toHaveBeenCalledWith('/screen ');
     });
@@ -1372,7 +1372,7 @@ describe('AskBarView', () => {
           inputRef={makeRef()}
         />,
       );
-      const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
       fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
       expect(setQuery).toHaveBeenCalledWith('/screen ');
       expect(onSubmit).not.toHaveBeenCalled();
@@ -1393,7 +1393,7 @@ describe('AskBarView', () => {
           inputRef={makeRef()}
         />,
       );
-      const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
       fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
       expect(onSubmit).toHaveBeenCalledOnce();
       expect(setQuery).not.toHaveBeenCalled();
@@ -1413,7 +1413,7 @@ describe('AskBarView', () => {
           inputRef={makeRef()}
         />,
       );
-      const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
       fireEvent.keyDown(textarea, { key: 'Escape' });
       // setQuery is NOT called (query is unchanged)
       expect(setQuery).not.toHaveBeenCalled();
@@ -1436,7 +1436,7 @@ describe('AskBarView', () => {
           inputRef={makeRef()}
         />,
       );
-      const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
       // Initially row 0 is highlighted (only one command, so index stays 0)
       fireEvent.keyDown(textarea, { key: 'ArrowDown' });
       // ArrowDown from index 0 moves to index 1
@@ -1457,7 +1457,7 @@ describe('AskBarView', () => {
           inputRef={makeRef()}
         />,
       );
-      const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
       fireEvent.keyDown(textarea, { key: 'ArrowUp' });
       // ArrowUp wraps to the last option
       const options = screen.getAllByRole('option');
@@ -1499,7 +1499,7 @@ describe('AskBarView', () => {
           inputRef={makeRef()}
         />,
       );
-      const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
       fireEvent.keyDown(textarea, { key: 'Tab' });
       expect(setQuery).not.toHaveBeenCalled();
       expect(onSubmit).not.toHaveBeenCalled();
@@ -1519,7 +1519,7 @@ describe('AskBarView', () => {
           inputRef={makeRef()}
         />,
       );
-      const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
       fireEvent.keyDown(textarea, { key: 'Escape' });
       expect(setQuery).not.toHaveBeenCalled();
     });
@@ -1543,7 +1543,7 @@ describe('AskBarView', () => {
           inputRef={makeRef()}
         />,
       );
-      const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
       fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
       expect(onSubmit).toHaveBeenCalledOnce();
     });
@@ -1561,7 +1561,7 @@ describe('AskBarView', () => {
           inputRef={makeRef()}
         />,
       );
-      const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
       // Should not throw
       fireEvent.keyDown(textarea, { key: 'ArrowDown' });
       fireEvent.keyDown(textarea, { key: 'ArrowUp' });
@@ -1583,7 +1583,7 @@ describe('AskBarView', () => {
           inputRef={makeRef()}
         />,
       );
-      const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
       fireEvent.keyDown(textarea, { key: 'Tab' });
       expect(setQuery).not.toHaveBeenCalled();
     });
@@ -1769,7 +1769,7 @@ describe('AskBarView', () => {
           onFirstKeystroke={onFirstKeystroke}
         />,
       );
-      const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
       fireEvent.change(textarea, { target: { value: 'h' } });
       expect(onFirstKeystroke).toHaveBeenCalledTimes(1);
     });
@@ -1789,7 +1789,7 @@ describe('AskBarView', () => {
           onFirstKeystroke={onFirstKeystroke}
         />,
       );
-      const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
       fireEvent.change(textarea, { target: { value: 'he' } });
       expect(onFirstKeystroke).not.toHaveBeenCalled();
     });
@@ -1807,7 +1807,7 @@ describe('AskBarView', () => {
           inputRef={makeRef()}
         />,
       );
-      const textarea = screen.getByPlaceholderText('Ask Thuki anything...');
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
       expect(() =>
         fireEvent.change(textarea, { target: { value: 'h' } }),
       ).not.toThrow();

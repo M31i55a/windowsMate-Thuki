@@ -1,7 +1,7 @@
 /*!
- * ThukiWin Core Library
+ * windowsMate - Thuki Core Library
  *
- * Application bootstrap for the ThukiWin desktop agent. Configures the
+ * Application bootstrap for the windowsMate - Thuki desktop agent. Configures the
  * system tray menu, window lifecycle (hide-on-close instead of quit),
  * and Windows-specific overlay management.
  */
@@ -62,25 +62,25 @@ const OVERLAY_LOGICAL_WIDTH: f64 = 650.0;
 const OVERLAY_LOGICAL_HEIGHT_COLLAPSED: f64 = 60.0;
 
 /// Minibar dimensions — thin always-on-top strip shown when the user
-/// switches away from ThukiWin while a task is in progress.
+/// switches away from windowsMate - Thuki while a task is in progress.
 #[cfg(target_os = "windows")]
 const OVERLAY_LOGICAL_WIDTH_MINIBAR: f64 = 48.0;
 #[cfg(target_os = "windows")]
 const OVERLAY_LOGICAL_HEIGHT_MINIBAR: f64 = 48.0;
 
 /// Frontend event used to synchronize show/hide animations with native window visibility.
-const OVERLAY_VISIBILITY_EVENT: &str = "thuki://visibility";
+const OVERLAY_VISIBILITY_EVENT: &str = "mate://visibility";
 const OVERLAY_VISIBILITY_SHOW: &str = "show";
 const OVERLAY_VISIBILITY_HIDE_REQUEST: &str = "hide-request";
 
 /// Frontend event that triggers the onboarding screen when one or more
 /// required permissions have not yet been granted.
-const ONBOARDING_EVENT: &str = "thuki://onboarding";
+const ONBOARDING_EVENT: &str = "mate://onboarding";
 
-/// Frontend event emitted when the user switches away from ThukiWin,
+/// Frontend event emitted when the user switches away from windowsMate - Thuki,
 /// triggering minibar mode (thin always-on-top strip).
 #[cfg(target_os = "windows")]
-const MINIBAR_EVENT: &str = "thuki://minibar";
+const MINIBAR_EVENT: &str = "mate://minibar";
 
 /// Logical dimensions of the onboarding window (centered, fixed size).
 const ONBOARDING_LOGICAL_WIDTH: f64 = 460.0;
@@ -308,7 +308,7 @@ async fn open_settings_window(app_handle: tauri::AppHandle) -> Result<(), String
     };
 
     let window = WebviewWindowBuilder::new(&app_handle, "settings", url)
-        .title("Settings — ThukiWin")
+        .title("Settings — windowsMate - Thuki")
         .inner_size(480.0, 700.0)
         .min_inner_size(400.0, 500.0)
         .center()
@@ -942,14 +942,14 @@ mod tests {
 
     #[test]
     fn overlay_visibility_event_constant_matches() {
-        assert_eq!(OVERLAY_VISIBILITY_EVENT, "thuki://visibility");
+        assert_eq!(OVERLAY_VISIBILITY_EVENT, "mate://visibility");
         assert_eq!(OVERLAY_VISIBILITY_SHOW, "show");
         assert_eq!(OVERLAY_VISIBILITY_HIDE_REQUEST, "hide-request");
     }
 
     #[test]
     fn onboarding_event_constant_matches() {
-        assert_eq!(ONBOARDING_EVENT, "thuki://onboarding");
+        assert_eq!(ONBOARDING_EVENT, "mate://onboarding");
     }
 
     #[test]

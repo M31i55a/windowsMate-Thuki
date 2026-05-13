@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "ThukiWin",
+  "productName": "windowsMate - Thuki",
   "version": "0.5.0",
-  "identifier": "com.thukiwin.thukiwin",
+  "identifier": "com.windowsmate.thuki",
   "build": {
     "beforeDevCommand": "bun run frontend:dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "ThukiWin",
+        "title": "windowsMate - Thuki",
         "width": 650,
         "height": 60,
         "resizable": true,

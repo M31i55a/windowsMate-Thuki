@@ -383,7 +383,7 @@ describe('ModelPickerPanel "Browse Ollama" pill', () => {
 
   it('exports a stable tooltip body constant', () => {
     expect(OLLAMA_PILL_TOOLTIP).toMatch(/Browse and pull any model on Ollama/i);
-    expect(OLLAMA_PILL_TOOLTIP).toMatch(/Thuki auto-detects it/i);
+    expect(OLLAMA_PILL_TOOLTIP).toMatch(/Mate auto-detects it/i);
   });
 
   it('uses no em dashes in the tooltip body', () => {

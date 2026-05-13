@@ -184,7 +184,7 @@ export function PermissionsStep() {
   // no relaunch needed) and by the post-restart resume path. Opens System
   // Settings directly and polls AXIsProcessTrusted until the user toggles
   // the permission on. The first AXIsProcessTrusted call from a fresh PID
-  // is what registers Thuki in the System Settings list, so polling does
+  // is what registers Mate in the System Settings list, so polling does
   // double duty here.
   const startAccessibilityFlow = useCallback(async () => {
     setAccessibilityStatus('requesting');
@@ -207,7 +207,7 @@ export function PermissionsStep() {
   }, [stopAxPolling]);
 
   const startScreenRecordingFlow = useCallback(async () => {
-    // CGRequestScreenCaptureAccess is the call that adds Thuki to the
+    // CGRequestScreenCaptureAccess is the call that adds Mate to the
     // Screen Recording list AND surfaces the macOS allow dialog. Without
     // it the entry never appears, so the user has nothing to toggle.
     await invoke('request_screen_recording_access');
@@ -360,7 +360,7 @@ export function PermissionsStep() {
             src={thukiLogo}
             width={64}
             height={64}
-            alt="Thuki"
+            alt="Mate"
             style={{
               objectFit: 'contain',
               pointerEvents: 'none',
@@ -382,7 +382,7 @@ export function PermissionsStep() {
             margin: '0 0 20px',
           }}
         >
-          {"Let's get Thuki set up"}
+          {"Let's get Mate set up"}
         </h1>
 
         {/* Steps */}
@@ -425,7 +425,7 @@ export function PermissionsStep() {
                 Accessibility
               </div>
               <div style={{ fontSize: 12, color: '#6b6660', lineHeight: 1.5 }}>
-                Lets Thuki respond to activator key (<KeyChip label="⌃" />
+                Lets Mate respond to activator key (<KeyChip label="⌃" />
                 <KeyChip label="⌃" />)
               </div>
             </div>
@@ -512,9 +512,9 @@ export function PermissionsStep() {
               <>
                 <CTAButton
                   onClick={handleQuitAndRelaunch}
-                  aria-label="Quit and Reopen Thuki"
+                  aria-label="Quit and Reopen Mate"
                 >
-                  Quit & Reopen Thuki
+                  Quit & Reopen Mate
                 </CTAButton>
                 <p
                   style={{

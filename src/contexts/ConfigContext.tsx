@@ -25,7 +25,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
  * Kept as a string literal here to avoid pulling a Rust-codegen dep into
  * the frontend.
  */
-const CONFIG_UPDATED_EVENT = 'thuki://config-updated';
+const CONFIG_UPDATED_EVENT = 'mate://config-updated';
 
 /** Shape returned by the Rust `get_config` command (snake_case). */
 interface RawAppConfig {

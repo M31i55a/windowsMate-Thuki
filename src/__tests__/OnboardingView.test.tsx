@@ -42,7 +42,7 @@ describe('OnboardingView', () => {
     render(<PermissionsStep />);
     await act(async () => {});
 
-    expect(screen.getByText("Let's get Thuki set up")).toBeInTheDocument();
+    expect(screen.getByText("Let's get Mate set up")).toBeInTheDocument();
   });
 
   it('skips to step 2 when accessibility is already granted on mount', async () => {
@@ -286,7 +286,7 @@ describe('OnboardingView', () => {
     });
 
     // First clears any stale ScreenCapture grant left from a previous
-    // binary, then registers Thuki in TCC + opens Settings.
+    // binary, then registers Mate in TCC + opens Settings.
     expect(invoke).toHaveBeenCalledWith('reset_and_relaunch_for_grant', {
       service: 'ScreenCapture',
     });

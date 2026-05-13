@@ -1,7 +1,7 @@
 //! Window focus change detection for minibar mode.
 //!
 //! Uses `SetWinEventHook` with `EVENT_SYSTEM_FOREGROUND` to detect
-//! when the user switches away from ThukiWin, triggering minibar mode.
+//! when the user switches away from windowsMate - Thuki, triggering minibar mode.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -40,7 +40,7 @@ type FocusChangeCallback = Arc<dyn Fn(HWND) + Send + Sync>;
 static mut FOCUS_CALLBACK: Option<FocusChangeCallback> = None;
 static mut FOCUS_HOOK: Option<HWINEVENTHOOK> = None;
 
-/// HWND of the main ThukiWin window, used to filter self-focus events.
+/// HWND of the main windowsMate - Thuki window, used to filter self-focus events.
 static mut MAIN_HWND: Option<HWND> = None;
 
 /// Stores the main window HWND so the callback can filter self-focus events.
@@ -66,7 +66,7 @@ unsafe extern "system" fn focus_event_callback(
         return;
     }
 
-    // Skip if the focused window IS ThukiWin (user clicked back on us).
+    // Skip if the focused window IS windowsMate - Thuki (user clicked back on us).
     if let Some(main_hwnd) = MAIN_HWND {
         if hwnd == main_hwnd {
             return;

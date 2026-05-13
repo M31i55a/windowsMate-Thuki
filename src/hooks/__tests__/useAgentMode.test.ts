@@ -152,7 +152,7 @@ describe('useAgentMode', () => {
     let capturedHandler: ((event: { payload: unknown }) => void) | null = null;
     mockListen.mockImplementation(
       async (event: string, handler: (event: { payload: unknown }) => void) => {
-        if (event === 'thuki://agent') capturedHandler = handler;
+        if (event === 'mate://agent') capturedHandler = handler;
         return vi.fn();
       },
     );
@@ -178,7 +178,7 @@ describe('useAgentMode', () => {
     let capturedHandler: ((event: { payload: unknown }) => void) | null = null;
     mockListen.mockImplementation(
       async (event: string, handler: (event: { payload: unknown }) => void) => {
-        if (event === 'thuki://agent') capturedHandler = handler;
+        if (event === 'mate://agent') capturedHandler = handler;
         return vi.fn();
       },
     );
@@ -204,7 +204,7 @@ describe('useAgentMode', () => {
     let capturedHandler: ((event: { payload: unknown }) => void) | null = null;
     mockListen.mockImplementation(
       async (event: string, handler: (event: { payload: unknown }) => void) => {
-        if (event === 'thuki://agent') capturedHandler = handler;
+        if (event === 'mate://agent') capturedHandler = handler;
         return vi.fn();
       },
     );

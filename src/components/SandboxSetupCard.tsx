@@ -8,7 +8,7 @@ import { invoke } from '@tauri-apps/api/core';
  */
 export function SandboxSetupCard() {
   const SETUP_URL =
-    'https://github.com/ayzekhdawy/thukiwin#search-sandbox-setup';
+    'https://github.com/ayzekhdawy/windowsMate-Thuki#search-sandbox-setup';
 
   const handleOpenGuide = () => {
     void invoke('open_url', { url: SETUP_URL });

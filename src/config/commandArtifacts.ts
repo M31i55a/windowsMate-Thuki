@@ -63,7 +63,7 @@ export function renderCommandsMarkdown(): string {
     '2. **No highlighted text + typed text after command:** typed text is the input',
     '3. **Both present:** highlighted text is the primary input; typed text is appended as an additional instruction',
     '',
-    'This means you can highlight text anywhere on screen, summon Thuki with Ctrl+Space, type a command, and hit Enter without retyping the selected content.',,
+    'This means you can highlight text anywhere on screen, summon Mate with Ctrl+Space, type a command, and hit Enter without retyping the selected content.',,
     '',
     ...COMMANDS.flatMap((command, index) => {
       const section = renderDocsSection(command);
@@ -79,7 +79,7 @@ export function renderSlashCommandPromptAppendix(): string {
   return [
     '# Supported slash commands',
     '',
-    `These are Thuki's only built-in slash commands: ${SLASH_COMMAND_LIST}.`,
+    `These are Mate's only built-in slash commands: ${SLASH_COMMAND_LIST}.`,
     '',
     'If the user asks what slash commands are available, what built-in commands exist, or how to use them, answer with the slash-command list below. Do not answer about generic tools, tool availability, or function calling.',
     '',

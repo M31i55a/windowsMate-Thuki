@@ -17,36 +17,36 @@ interface DisplayTabProps {
 
 export function DisplayTab({ config, resyncToken, onSaved }: DisplayTabProps) {
   const [bubbleColor, setBubbleColor] = useState(
-    () => localStorage.getItem('thuki-bubble-color') ?? '#ff8d5c',
+    () => localStorage.getItem('mate-bubble-color') ?? '#ff8d5c',
   );
   const [transparency, setTransparency] = useState(
-    () => Number(localStorage.getItem('thuki-bg-opacity-pct') ?? '92'),
+    () => Number(localStorage.getItem('mate-bg-opacity-pct') ?? '92'),
   );
   const [blur, setBlur] = useState(
-    () => Number(localStorage.getItem('thuki-chat-blur-px') ?? '10'),
+    () => Number(localStorage.getItem('mate-chat-blur-px') ?? '10'),
   );
 
   function applyBubbleColor(color: string) {
     setBubbleColor(color);
-    localStorage.setItem('thuki-bubble-color', color);
+    localStorage.setItem('mate-bubble-color', color);
     document.documentElement.style.setProperty('--bubble-color', color);
-    void emit('thuki://appearance', { bubbleColor: color, opacity: null, blur: null });
+    void emit('mate://appearance', { bubbleColor: color, opacity: null, blur: null });
   }
 
   function applyTransparency(pct: number) {
     setTransparency(pct);
     const opacity = (pct / 100).toFixed(2);
-    localStorage.setItem('thuki-bg-opacity-pct', String(pct));
-    localStorage.setItem('thuki-bg-opacity', opacity);
+    localStorage.setItem('mate-bg-opacity-pct', String(pct));
+    localStorage.setItem('mate-bg-opacity', opacity);
     document.documentElement.style.setProperty('--app-bg-opacity', opacity);
-    void emit('thuki://appearance', { bubbleColor: null, opacity, blur: null });
+    void emit('mate://appearance', { bubbleColor: null, opacity, blur: null });
   }
 
   function applyBlur(px: number) {
     setBlur(px);
-    localStorage.setItem('thuki-chat-blur-px', String(px));
+    localStorage.setItem('mate-chat-blur-px', String(px));
     document.documentElement.style.setProperty('--chat-bg-blur', `${px}px`);
-    void emit('thuki://appearance', { bubbleColor: null, opacity: null, blur: String(px) });
+    void emit('mate://appearance', { bubbleColor: null, opacity: null, blur: String(px) });
   }
 
   return (

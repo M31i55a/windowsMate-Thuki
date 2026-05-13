@@ -19,7 +19,7 @@ export const SEARCH_WARNING_COPY: Record<SearchWarning, string> = {
   router_failure:
     'Something went wrong while analyzing your question. Try again.',
   judge_failure:
-    'Evidence check had a hiccup. Answer is based on whatever Thuki gathered so far.',
+    'Evidence check had a hiccup. Answer is based on whatever Mate gathered so far.',
   budget_exhausted:
     'Search ran out of time. Answer is based on the evidence gathered before the budget hit.',
   no_progress:

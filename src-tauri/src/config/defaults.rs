@@ -174,7 +174,7 @@ pub const BOUNDS_TIMEOUT_S: (u64, u64) = (1, 300);
 /// the pipeline records every LLM request/response, every SearXNG query and
 /// raw response body, every reader batch (per-URL latency, raw body, full
 /// extracted text), and every judge verdict to a JSON-Lines file under
-/// `~/Library/Application Support/com.quietnode.thuki/traces/`. Toggleable
+/// `~/Library/Application Support/com.windowsmate.thuki/traces/`. Toggleable
 /// from the Settings panel (Web tab, Diagnostics section). Off in shipped
 /// builds by default.
 pub const DEFAULT_DEBUG_SEARCH_TRACE_ENABLED: bool = false;

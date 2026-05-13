@@ -223,20 +223,20 @@ impl ConversationHistory {
     }
 }
 
-/// System prompt loaded once at startup from the `THUKI_SYSTEM_PROMPT`
+/// System prompt loaded once at startup from the `MATE_SYSTEM_PROMPT`
 /// environment variable, falling back to a built-in default.
 pub struct SystemPrompt(pub String);
 
-/// Reads `THUKI_SYSTEM_PROMPT` from the environment, falling back to the
+/// Reads `MATE_SYSTEM_PROMPT` from the environment, falling back to the
 /// built-in default when unset or empty.
 pub fn load_system_prompt() -> String {
-    std::env::var("THUKI_SYSTEM_PROMPT")
+    std::env::var("MATE_SYSTEM_PROMPT")
         .ok()
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| DEFAULT_SYSTEM_PROMPT.to_string())
 }
 
-/// Model configuration loaded once at startup from the `THUKI_SUPPORTED_AI_MODELS`
+/// Model configuration loaded once at startup from the `MATE_SUPPORTED_AI_MODELS`
 /// environment variable (comma-separated list). The first entry is the active model
 /// used for inference. Falls back to `DEFAULT_MODEL_NAME` when unset or empty.
 /// Wrapped in a Mutex so the active model can be changed at runtime from settings.
@@ -245,11 +245,11 @@ pub struct ModelConfig {
     pub all: Vec<String>,
 }
 
-/// Reads `THUKI_SUPPORTED_AI_MODELS` from the environment and returns a
+/// Reads `MATE_SUPPORTED_AI_MODELS` from the environment and returns a
 /// `ModelConfig`. Trims whitespace around each entry and filters empty entries.
 /// Defaults to `[DEFAULT_MODEL_NAME]` when the variable is unset or empty.
 pub fn load_model_config() -> ModelConfig {
-    let models: Vec<String> = std::env::var("THUKI_SUPPORTED_AI_MODELS")
+    let models: Vec<String> = std::env::var("MATE_SUPPORTED_AI_MODELS")
         .ok()
         .filter(|s| !s.trim().is_empty())
         .map(|s| {
@@ -1328,7 +1328,7 @@ mod tests {
     #[test]
     fn load_model_config_returns_default_when_unset() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::remove_var("THUKI_SUPPORTED_AI_MODELS");
+        std::env::remove_var("MATE_SUPPORTED_AI_MODELS");
         let config = load_model_config();
         assert_eq!(*config.active.lock().unwrap(), DEFAULT_MODEL_NAME);
         assert_eq!(config.all, vec![DEFAULT_MODEL_NAME.to_string()]);
@@ -1337,59 +1337,59 @@ mod tests {
     #[test]
     fn load_model_config_reads_single_model() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::set_var("THUKI_SUPPORTED_AI_MODELS", "gemma4:e4b");
+        std::env::set_var("MATE_SUPPORTED_AI_MODELS", "gemma4:e4b");
         let config = load_model_config();
         assert_eq!(*config.active.lock().unwrap(), "gemma4:e4b");
         assert_eq!(config.all, vec!["gemma4:e4b".to_string()]);
-        std::env::remove_var("THUKI_SUPPORTED_AI_MODELS");
+        std::env::remove_var("MATE_SUPPORTED_AI_MODELS");
     }
 
     #[test]
     fn load_model_config_reads_multiple_models_first_is_active() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::set_var("THUKI_SUPPORTED_AI_MODELS", "gemma4:e2b,gemma4:e4b");
+        std::env::set_var("MATE_SUPPORTED_AI_MODELS", "gemma4:e2b,gemma4:e4b");
         let config = load_model_config();
         assert_eq!(*config.active.lock().unwrap(), "gemma4:e2b");
         assert_eq!(
             config.all,
             vec!["gemma4:e2b".to_string(), "gemma4:e4b".to_string()]
         );
-        std::env::remove_var("THUKI_SUPPORTED_AI_MODELS");
+        std::env::remove_var("MATE_SUPPORTED_AI_MODELS");
     }
 
     #[test]
     fn load_model_config_trims_whitespace_around_entries() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::set_var("THUKI_SUPPORTED_AI_MODELS", " gemma4:e2b , gemma4:e4b ");
+        std::env::set_var("MATE_SUPPORTED_AI_MODELS", " gemma4:e2b , gemma4:e4b ");
         let config = load_model_config();
         assert_eq!(*config.active.lock().unwrap(), "gemma4:e2b");
         assert_eq!(
             config.all,
             vec!["gemma4:e2b".to_string(), "gemma4:e4b".to_string()]
         );
-        std::env::remove_var("THUKI_SUPPORTED_AI_MODELS");
+        std::env::remove_var("MATE_SUPPORTED_AI_MODELS");
     }
 
     #[test]
     fn load_model_config_falls_back_to_default_when_whitespace_only() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::set_var("THUKI_SUPPORTED_AI_MODELS", "   ");
+        std::env::set_var("MATE_SUPPORTED_AI_MODELS", "   ");
         let config = load_model_config();
         assert_eq!(*config.active.lock().unwrap(), DEFAULT_MODEL_NAME);
         assert_eq!(config.all, vec![DEFAULT_MODEL_NAME.to_string()]);
-        std::env::remove_var("THUKI_SUPPORTED_AI_MODELS");
+        std::env::remove_var("MATE_SUPPORTED_AI_MODELS");
     }
 
     #[test]
     fn load_model_config_filters_empty_entries_from_list() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::set_var("THUKI_SUPPORTED_AI_MODELS", "gemma4:e2b,,gemma4:e4b");
+        std::env::set_var("MATE_SUPPORTED_AI_MODELS", "gemma4:e2b,,gemma4:e4b");
         let config = load_model_config();
         assert_eq!(
             config.all,
             vec!["gemma4:e2b".to_string(), "gemma4:e4b".to_string()]
         );
-        std::env::remove_var("THUKI_SUPPORTED_AI_MODELS");
+        std::env::remove_var("MATE_SUPPORTED_AI_MODELS");
     }
 
     #[test]
@@ -1397,11 +1397,11 @@ mod tests {
         let _guard = ENV_LOCK.lock().unwrap();
         // All entries filter to empty strings, leaving an empty list.
         // The active model must still fall back to DEFAULT_MODEL_NAME.
-        std::env::set_var("THUKI_SUPPORTED_AI_MODELS", ",");
+        std::env::set_var("MATE_SUPPORTED_AI_MODELS", ",");
         let config = load_model_config();
         assert_eq!(*config.active.lock().unwrap(), DEFAULT_MODEL_NAME);
         assert_eq!(config.all, Vec::<String>::new());
-        std::env::remove_var("THUKI_SUPPORTED_AI_MODELS");
+        std::env::remove_var("MATE_SUPPORTED_AI_MODELS");
     }
 
     // ── sampling options test ────────────────────────────────────────────────
@@ -1442,7 +1442,7 @@ mod tests {
     #[test]
     fn load_system_prompt_returns_default_when_unset() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::remove_var("THUKI_SYSTEM_PROMPT");
+        std::env::remove_var("MATE_SYSTEM_PROMPT");
 
         let prompt = load_system_prompt();
         assert_eq!(prompt, DEFAULT_SYSTEM_PROMPT);
@@ -1451,23 +1451,23 @@ mod tests {
     #[test]
     fn load_system_prompt_reads_env_var() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::set_var("THUKI_SYSTEM_PROMPT", "Custom prompt");
+        std::env::set_var("MATE_SYSTEM_PROMPT", "Custom prompt");
 
         let prompt = load_system_prompt();
         assert_eq!(prompt, "Custom prompt");
 
-        std::env::remove_var("THUKI_SYSTEM_PROMPT");
+        std::env::remove_var("MATE_SYSTEM_PROMPT");
     }
 
     #[test]
     fn load_system_prompt_ignores_empty_env_var() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::set_var("THUKI_SYSTEM_PROMPT", "   ");
+        std::env::set_var("MATE_SYSTEM_PROMPT", "   ");
 
         let prompt = load_system_prompt();
         assert_eq!(prompt, DEFAULT_SYSTEM_PROMPT);
 
-        std::env::remove_var("THUKI_SYSTEM_PROMPT");
+        std::env::remove_var("MATE_SYSTEM_PROMPT");
     }
 
     #[test]

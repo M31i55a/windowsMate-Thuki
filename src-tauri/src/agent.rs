@@ -427,7 +427,7 @@ pub async fn run_agent_loop(
     state.reset();
     state.set_status(AgentStatus::Capturing);
     let _ = app_handle.emit(
-        "thuki://agent",
+        "mate://agent",
         AgentEvent::StatusChanged(AgentStatus::Capturing),
     );
 
@@ -464,7 +464,7 @@ async fn run_tool_use_loop(
     let provider_name = format!("{:?}", config.provider);
     let screenshot_allowed = request_screenshot_consent(&app_handle, &state, &provider_name).await;
 
-    eprintln!("thuki: [agent] cloud loop screenshot_allowed={screenshot_allowed}");
+    eprintln!("mate: [agent] cloud loop screenshot_allowed={screenshot_allowed}");
 
     // Build initial conversation.
     let mut messages: Vec<crate::commands::ChatMessage> = vec![
@@ -488,14 +488,14 @@ async fn run_tool_use_loop(
         if state.is_cancelled() {
             state.set_status(AgentStatus::Done);
             let _ = app_handle.emit(
-                "thuki://agent",
+                "mate://agent",
                 AgentEvent::StatusChanged(AgentStatus::Done),
             );
             return Ok(());
         }
 
         eprintln!(
-            "thuki: [agent] tool-use iteration {}/{}",
+            "mate: [agent] tool-use iteration {}/{}",
             iteration + 1,
             MAX_ITERATIONS
         );
@@ -504,21 +504,21 @@ async fn run_tool_use_loop(
         let current_screenshot_b64: Option<String> = if screenshot_allowed {
             state.set_status(AgentStatus::Capturing);
             let _ = app_handle.emit(
-                "thuki://agent",
+                "mate://agent",
                 AgentEvent::StatusChanged(AgentStatus::Capturing),
             );
 
             let screenshot_path = match capture_screenshot(&app_handle).await {
                 Ok(p) => p,
                 Err(e) => {
-                    eprintln!("thuki: [agent] screenshot failed: {e}");
+                    eprintln!("mate: [agent] screenshot failed: {e}");
                     state.set_status(AgentStatus::Error);
                     let _ = app_handle.emit(
-                        "thuki://agent",
+                        "mate://agent",
                         AgentEvent::Error(format!("Screenshot failed: {e}")),
                     );
                     let _ = app_handle.emit(
-                        "thuki://agent",
+                        "mate://agent",
                         AgentEvent::StatusChanged(AgentStatus::Error),
                     );
                     return Err(e);
@@ -526,7 +526,7 @@ async fn run_tool_use_loop(
             };
 
             let _ = app_handle.emit(
-                "thuki://agent",
+                "mate://agent",
                 AgentEvent::ScreenshotTaken(screenshot_path.clone()),
             );
 
@@ -552,7 +552,7 @@ async fn run_tool_use_loop(
         // Step 2: Send to provider with tool definitions.
         state.set_status(AgentStatus::Analyzing);
         let _ = app_handle.emit(
-            "thuki://agent",
+            "mate://agent",
             AgentEvent::StatusChanged(AgentStatus::Analyzing),
         );
 
@@ -606,18 +606,18 @@ async fn run_tool_use_loop(
             Ok(text) => {
                 if !text.is_empty() {
                     state.add_to_history(format!("[Model] {}", text));
-                    let _ = app_handle.emit("thuki://agent", AgentEvent::Reasoning(text));
+                    let _ = app_handle.emit("mate://agent", AgentEvent::Reasoning(text));
                 }
             }
             Err(e) => {
-                eprintln!("thuki: [agent] provider error: {e}");
+                eprintln!("mate: [agent] provider error: {e}");
                 state.set_status(AgentStatus::Error);
                 let _ = app_handle.emit(
-                    "thuki://agent",
+                    "mate://agent",
                     AgentEvent::Error(format!("Provider error: {e}")),
                 );
                 let _ = app_handle.emit(
-                    "thuki://agent",
+                    "mate://agent",
                     AgentEvent::StatusChanged(AgentStatus::Error),
                 );
                 return Err(e);
@@ -627,10 +627,10 @@ async fn run_tool_use_loop(
         // Step 3: If no tool calls, model is done talking.
         if tool_calls.is_empty() {
             let summary = accumulated_text.trim().to_string();
-            let _ = app_handle.emit("thuki://agent", AgentEvent::Done { summary });
+            let _ = app_handle.emit("mate://agent", AgentEvent::Done { summary });
             state.set_status(AgentStatus::Done);
             let _ = app_handle.emit(
-                "thuki://agent",
+                "mate://agent",
                 AgentEvent::StatusChanged(AgentStatus::Done),
             );
             return Ok(());
@@ -639,7 +639,7 @@ async fn run_tool_use_loop(
         // Step 4: Convert and execute tool calls.
         state.set_status(AgentStatus::Executing);
         let _ = app_handle.emit(
-            "thuki://agent",
+            "mate://agent",
             AgentEvent::StatusChanged(AgentStatus::Executing),
         );
 
@@ -647,7 +647,7 @@ async fn run_tool_use_loop(
             if state.is_cancelled() {
                 state.set_status(AgentStatus::Done);
                 let _ = app_handle.emit(
-                    "thuki://agent",
+                    "mate://agent",
                     AgentEvent::StatusChanged(AgentStatus::Done),
                 );
                 return Ok(());
@@ -657,7 +657,7 @@ async fn run_tool_use_loop(
                 Some(a) => a,
                 None => {
                     eprintln!(
-                        "thuki: [agent] unparseable tool call: {} {}",
+                        "mate: [agent] unparseable tool call: {} {}",
                         tc.name, tc.arguments
                     );
                     continue;
@@ -667,14 +667,14 @@ async fn run_tool_use_loop(
             // Handle DONE action.
             if let AgentAction::Done { ref summary } = action {
                 let _ = app_handle.emit(
-                    "thuki://agent",
+                    "mate://agent",
                     AgentEvent::Done {
                         summary: summary.clone(),
                     },
                 );
                 state.set_status(AgentStatus::Done);
                 let _ = app_handle.emit(
-                    "thuki://agent",
+                    "mate://agent",
                     AgentEvent::StatusChanged(AgentStatus::Done),
                 );
                 return Ok(());
@@ -714,11 +714,11 @@ async fn run_tool_use_loop(
 
                 state.set_status(AgentStatus::WaitingConfirmation);
                 let _ = app_handle.emit(
-                    "thuki://agent",
+                    "mate://agent",
                     AgentEvent::StatusChanged(AgentStatus::WaitingConfirmation),
                 );
                 let _ = app_handle.emit(
-                    "thuki://agent",
+                    "mate://agent",
                     AgentEvent::ConfirmationRequired {
                         action_id: action_id.clone(),
                         action: action_desc,
@@ -772,14 +772,14 @@ async fn run_tool_use_loop(
 
     let summary = "Agent reached maximum iteration limit".to_string();
     let _ = app_handle.emit(
-        "thuki://agent",
+        "mate://agent",
         AgentEvent::Done {
             summary: summary.clone(),
         },
     );
     state.set_status(AgentStatus::Done);
     let _ = app_handle.emit(
-        "thuki://agent",
+        "mate://agent",
         AgentEvent::StatusChanged(AgentStatus::Done),
     );
     Ok(())
@@ -805,7 +805,7 @@ async fn execute_action_with_result(
     };
     state.add_to_history(format!("[Action] {} -> {}", action_desc, result_msg));
     let _ = app_handle.emit(
-        "thuki://agent",
+        "mate://agent",
         AgentEvent::ActionExecuted {
             action: action_desc,
             result: result_msg,
@@ -835,7 +835,7 @@ async fn run_text_parse_loop(
         .map(|c| c.vision)
         .unwrap_or(false);
 
-    eprintln!("thuki: [agent] model={model} has_vision={has_vision}");
+    eprintln!("mate: [agent] model={model} has_vision={has_vision}");
 
     let mut conversation: Vec<serde_json::Value> = vec![
         serde_json::json!({
@@ -852,14 +852,14 @@ async fn run_text_parse_loop(
         if state.is_cancelled() {
             state.set_status(AgentStatus::Done);
             let _ = app_handle.emit(
-                "thuki://agent",
+                "mate://agent",
                 AgentEvent::StatusChanged(AgentStatus::Done),
             );
             return Ok(());
         }
 
         eprintln!(
-            "thuki: [agent] text-parse iteration {}/{}",
+            "mate: [agent] text-parse iteration {}/{}",
             iteration + 1,
             MAX_ITERATIONS
         );
@@ -868,21 +868,21 @@ async fn run_text_parse_loop(
         if has_vision {
             state.set_status(AgentStatus::Capturing);
             let _ = app_handle.emit(
-                "thuki://agent",
+                "mate://agent",
                 AgentEvent::StatusChanged(AgentStatus::Capturing),
             );
 
             let screenshot_path = match capture_screenshot(&app_handle).await {
                 Ok(p) => p,
                 Err(e) => {
-                    eprintln!("thuki: [agent] screenshot failed: {e}");
+                    eprintln!("mate: [agent] screenshot failed: {e}");
                     state.set_status(AgentStatus::Error);
                     let _ = app_handle.emit(
-                        "thuki://agent",
+                        "mate://agent",
                         AgentEvent::Error(format!("Screenshot failed: {e}")),
                     );
                     let _ = app_handle.emit(
-                        "thuki://agent",
+                        "mate://agent",
                         AgentEvent::StatusChanged(AgentStatus::Error),
                     );
                     return Err(e);
@@ -890,7 +890,7 @@ async fn run_text_parse_loop(
             };
 
             let _ = app_handle.emit(
-                "thuki://agent",
+                "mate://agent",
                 AgentEvent::ScreenshotTaken(screenshot_path.clone()),
             );
 
@@ -925,21 +925,21 @@ async fn run_text_parse_loop(
         // Step 2: Send to Ollama.
         state.set_status(AgentStatus::Analyzing);
         let _ = app_handle.emit(
-            "thuki://agent",
+            "mate://agent",
             AgentEvent::StatusChanged(AgentStatus::Analyzing),
         );
 
         let response = match query_ollama(&ollama_url, &model, &conversation).await {
             Ok(r) => r,
             Err(e) => {
-                eprintln!("thuki: [agent] ollama query failed: {e}");
+                eprintln!("mate: [agent] ollama query failed: {e}");
                 state.set_status(AgentStatus::Error);
                 let _ = app_handle.emit(
-                    "thuki://agent",
+                    "mate://agent",
                     AgentEvent::Error(format!("Ollama query failed: {e}")),
                 );
                 let _ = app_handle.emit(
-                    "thuki://agent",
+                    "mate://agent",
                     AgentEvent::StatusChanged(AgentStatus::Error),
                 );
                 return Err(e);
@@ -947,7 +947,7 @@ async fn run_text_parse_loop(
         };
 
         eprintln!(
-            "thuki: [agent] model response ({} chars): {}",
+            "mate: [agent] model response ({} chars): {}",
             response.len(),
             &response[..response.len().min(200)]
         );
@@ -958,12 +958,12 @@ async fn run_text_parse_loop(
         }));
 
         state.add_to_history(format!("[Model] {}", response));
-        let _ = app_handle.emit("thuki://agent", AgentEvent::Reasoning(response.clone()));
+        let _ = app_handle.emit("mate://agent", AgentEvent::Reasoning(response.clone()));
 
         // Step 3: Parse and execute actions from the response.
         state.set_status(AgentStatus::Executing);
         let _ = app_handle.emit(
-            "thuki://agent",
+            "mate://agent",
             AgentEvent::StatusChanged(AgentStatus::Executing),
         );
 
@@ -973,7 +973,7 @@ async fn run_text_parse_loop(
             if state.is_cancelled() {
                 state.set_status(AgentStatus::Done);
                 let _ = app_handle.emit(
-                    "thuki://agent",
+                    "mate://agent",
                     AgentEvent::StatusChanged(AgentStatus::Done),
                 );
                 return Ok(());
@@ -1007,14 +1007,14 @@ async fn run_text_parse_loop(
 
             if let AgentAction::Done { ref summary } = action {
                 let _ = app_handle.emit(
-                    "thuki://agent",
+                    "mate://agent",
                     AgentEvent::Done {
                         summary: summary.clone(),
                     },
                 );
                 state.set_status(AgentStatus::Done);
                 let _ = app_handle.emit(
-                    "thuki://agent",
+                    "mate://agent",
                     AgentEvent::StatusChanged(AgentStatus::Done),
                 );
                 return Ok(());
@@ -1057,11 +1057,11 @@ async fn run_text_parse_loop(
 
                 state.set_status(AgentStatus::WaitingConfirmation);
                 let _ = app_handle.emit(
-                    "thuki://agent",
+                    "mate://agent",
                     AgentEvent::StatusChanged(AgentStatus::WaitingConfirmation),
                 );
                 let _ = app_handle.emit(
-                    "thuki://agent",
+                    "mate://agent",
                     AgentEvent::ConfirmationRequired {
                         action_id: action_id.clone(),
                         action: action_desc,
@@ -1100,17 +1100,17 @@ async fn run_text_parse_loop(
         tokio::time::sleep(Duration::from_millis(SCREENSHOT_DELAY_MS)).await;
 
         if actions_executed == 0 && !state.is_cancelled() {
-            eprintln!("thuki: [agent] no parseable actions in model response");
+            eprintln!("mate: [agent] no parseable actions in model response");
             let summary = response.trim().to_string();
             let _ = app_handle.emit(
-                "thuki://agent",
+                "mate://agent",
                 AgentEvent::Done {
                     summary: summary.clone(),
                 },
             );
             state.set_status(AgentStatus::Done);
             let _ = app_handle.emit(
-                "thuki://agent",
+                "mate://agent",
                 AgentEvent::StatusChanged(AgentStatus::Done),
             );
             return Ok(());
@@ -1119,14 +1119,14 @@ async fn run_text_parse_loop(
 
     let summary = "Agent reached maximum iteration limit".to_string();
     let _ = app_handle.emit(
-        "thuki://agent",
+        "mate://agent",
         AgentEvent::Done {
             summary: summary.clone(),
         },
     );
     state.set_status(AgentStatus::Done);
     let _ = app_handle.emit(
-        "thuki://agent",
+        "mate://agent",
         AgentEvent::StatusChanged(AgentStatus::Done),
     );
     Ok(())
@@ -1157,11 +1157,11 @@ async fn request_screenshot_consent(
 
     state.set_status(AgentStatus::WaitingConfirmation);
     let _ = app_handle.emit(
-        "thuki://agent",
+        "mate://agent",
         AgentEvent::StatusChanged(AgentStatus::WaitingConfirmation),
     );
     let _ = app_handle.emit(
-        "thuki://agent",
+        "mate://agent",
         AgentEvent::ConfirmationRequired {
             action_id: CONSENT_ACTION_ID.to_string(),
             action: "screenshot_consent".to_string(),
@@ -1251,7 +1251,7 @@ pub async fn start_agent_mode(
 
     tauri::async_runtime::spawn(async move {
         if let Err(e) = run_agent_loop(app_handle, state, task, model, ollama_url).await {
-            eprintln!("thuki: [agent] error: {e}");
+            eprintln!("mate: [agent] error: {e}");
         }
     });
 

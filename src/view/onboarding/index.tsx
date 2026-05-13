@@ -5,7 +5,7 @@ import { PermissionsStep } from './PermissionsStep';
 /**
  * Stage values mirror the Rust `OnboardingStage` enum exactly. The
  * backend emits these strings as the `stage` field on the
- * `thuki://onboarding` event; any drift here breaks the dispatch.
+ * `mate://onboarding` event; any drift here breaks the dispatch.
  */
 export type OnboardingStage = 'permissions' | 'model_check' | 'intro';
 

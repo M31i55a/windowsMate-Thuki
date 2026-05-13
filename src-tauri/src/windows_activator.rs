@@ -1,6 +1,6 @@
 //! Windows activation listener, context capture, and permissions.
 //!
-//! This module combines the Windows-specific functionality needed for ThukiWin:
+//! This module combines the Windows-specific functionality needed for windowsMate - Thuki:
 //! - Double-tap Ctrl hotkey detection via SetWindowsHookExW
 //! - Context capture (clipboard fallback for selected text)
 //! - Permission stubs (Windows has no TCC equivalent)
@@ -134,7 +134,7 @@ fn run_hook_loop(is_active: Arc<AtomicBool>) {
 
     match hook {
         Ok(hook_handle) => {
-            eprintln!("thuki: [activator] keyboard hook installed — listening for double-tap Ctrl");
+            eprintln!("mate: [activator] keyboard hook installed — listening for double-tap Ctrl");
 
             let mut msg = MSG::default();
             while is_active.load(Ordering::SeqCst) {
@@ -147,7 +147,7 @@ fn run_hook_loop(is_active: Arc<AtomicBool>) {
             let _ = unsafe { UnhookWindowsHookEx(hook_handle) };
         }
         Err(_) => {
-            eprintln!("thuki: [activator] failed to install keyboard hook");
+            eprintln!("mate: [activator] failed to install keyboard hook");
         }
     }
 
@@ -158,7 +158,7 @@ fn run_hook_loop(is_active: Arc<AtomicBool>) {
         *cb = None;
     }
 
-    eprintln!("thuki: [activator] keyboard hook removed");
+    eprintln!("mate: [activator] keyboard hook removed");
 }
 
 unsafe extern "system" fn keyboard_hook_callback(

@@ -1,10 +1,10 @@
 //! Windows auto-start management via Task Scheduler.
 //!
-//! Uses `schtasks` commands to create/delete a logon trigger task so ThukiWin
+//! Uses `schtasks` commands to create/delete a logon trigger task so windowsMate - Thuki
 //! starts automatically when the user logs in.
 
 /// The name of the scheduled task for auto-start detection.
-const TASK_NAME: &str = "ThukiWin";
+const TASK_NAME: &str = "windowsMate - Thuki";
 
 /// Checks whether the auto-start task is registered in Task Scheduler.
 pub fn is_auto_start_enabled() -> Result<bool, String> {
@@ -16,7 +16,7 @@ pub fn is_auto_start_enabled() -> Result<bool, String> {
     Ok(output.status.success())
 }
 
-/// Creates a scheduled task that runs ThukiWin on user logon.
+/// Creates a scheduled task that runs windowsMate - Thuki on user logon.
 pub fn enable_auto_start() -> Result<(), String> {
     let exe_path = std::env::current_exe()
         .map_err(|e| format!("Failed to get executable path: {e}"))?;
@@ -105,7 +105,7 @@ mod tests {
 
     #[test]
     fn task_name_constant() {
-        assert_eq!(TASK_NAME, "ThukiWin");
+        assert_eq!(TASK_NAME, "windowsMate - Thuki");
     }
 
     #[test]

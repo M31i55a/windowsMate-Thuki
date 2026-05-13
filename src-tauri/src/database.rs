@@ -1,7 +1,7 @@
 /*!
  * SQLite persistence layer for conversation history.
  *
- * Stores conversations and messages in `~/.thuki/thuki.db` using rusqlite
+ * Stores conversations and messages in `~/.mate/mate.db` using rusqlite
  * with WAL journal mode for concurrent read access during streaming writes.
  *
  * All public functions accept a `&Connection` and are synchronous — callers
@@ -44,9 +44,9 @@ pub struct PersistedMessage {
     pub created_at: i64,
 }
 
-/// Opens (or creates) the SQLite database at `<app_data_dir>/thuki.db` and
+/// Opens (or creates) the SQLite database at `<app_data_dir>/mate.db` and
 /// runs migrations. If an existing database is found at the legacy location
-/// (`~/.thuki/thuki.db`), it is moved to the new location automatically.
+/// (`~/.mate/mate.db`), it is moved to the new location automatically.
 ///
 /// # Errors
 ///
@@ -57,9 +57,9 @@ pub fn open_database(app_data_dir: &std::path::Path) -> SqlResult<Connection> {
     std::fs::create_dir_all(app_data_dir)
         .map_err(|e| rusqlite::Error::InvalidParameterName(e.to_string()))?;
 
-    let db_path = app_data_dir.join("thuki.db");
+    let db_path = app_data_dir.join("mate.db");
 
-    // One-time migration: move database from the legacy ~/.thuki/ location.
+    // One-time migration: move database from the legacy ~/.mate/ location.
     migrate_legacy_db(&db_path);
 
     let conn = Connection::open(&db_path)?;
@@ -79,7 +79,7 @@ pub fn open_in_memory() -> SqlResult<Connection> {
     Ok(conn)
 }
 
-/// Moves the database from `~/.thuki/thuki.db` to the Tauri app data
+/// Moves the database from `~/.mate/mate.db` to the Tauri app data
 /// directory if the legacy file exists and the target does not.
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn migrate_legacy_db(new_path: &std::path::Path) {
@@ -87,7 +87,7 @@ fn migrate_legacy_db(new_path: &std::path::Path) {
         return;
     }
     let legacy_path = match dirs::home_dir() {
-        Some(home) => home.join(".thuki").join("thuki.db"),
+        Some(home) => home.join(".mate").join("mate.db"),
         None => return,
     };
     if !legacy_path.exists() {
@@ -722,22 +722,22 @@ mod tests {
 
     #[test]
     fn migrate_legacy_db_moves_existing_file() {
-        let tmp = std::env::temp_dir().join(format!("thuki-migrate-{}", uuid::Uuid::new_v4()));
+        let tmp = std::env::temp_dir().join(format!("mate-migrate-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&tmp).unwrap();
 
         // Create a fake legacy DB file.
         let legacy_dir = tmp.join("legacy");
         fs::create_dir_all(&legacy_dir).unwrap();
-        let legacy_path = legacy_dir.join("thuki.db");
+        let legacy_path = legacy_dir.join("mate.db");
         fs::write(&legacy_path, b"legacy-data").unwrap();
 
         // Target path where the DB should be migrated to.
         let new_dir = tmp.join("new");
         fs::create_dir_all(&new_dir).unwrap();
-        let new_path = new_dir.join("thuki.db");
+        let new_path = new_dir.join("mate.db");
 
         // Manually test the migration logic (we can't call migrate_legacy_db
-        // directly because it hardcodes ~/.thuki, so we test the core logic).
+        // directly because it hardcodes ~/.mate, so we test the core logic).
         assert!(!new_path.exists());
         if legacy_path.exists() && !new_path.exists() {
             fs::rename(&legacy_path, &new_path).unwrap();
@@ -812,10 +812,10 @@ mod tests {
 
     #[test]
     fn migrate_legacy_db_skips_when_target_exists() {
-        let tmp = std::env::temp_dir().join(format!("thuki-migrate-{}", uuid::Uuid::new_v4()));
+        let tmp = std::env::temp_dir().join(format!("mate-migrate-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&tmp).unwrap();
 
-        let new_path = tmp.join("thuki.db");
+        let new_path = tmp.join("mate.db");
         fs::write(&new_path, b"existing-data").unwrap();
 
         // When the target already exists, migration should be skipped.

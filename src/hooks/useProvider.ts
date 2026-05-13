@@ -26,6 +26,9 @@ export const OPENROUTER_MODELS = [
   'mistralai/mistral-large',
   'deepseek/deepseek-r1',
   'x-ai/grok-3',
+  'google/gemma-4-31b-it:free',
+  'google/gemma-4-26b-a4b-it:free',
+  'nvidia/llama-nemotron-embed-vl-1b-v2:free',
 ] as const;
 
 export type OpenRouterModel = (typeof OPENROUTER_MODELS)[number];

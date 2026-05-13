@@ -103,6 +103,9 @@ pub fn default_models(provider: &Provider) -> &'static [&'static str] {
             "anthropic/claude-sonnet-4",
             "google/gemini-2.5-pro",
             "meta-llama/llama-4-scout",
+            "google/gemma-4-31b-it:free",
+            "google/gemma-4-26b-a4b-it:free",
+            "nvidia/llama-nemotron-embed-vl-1b-v2:free",
         ],
     }
 }

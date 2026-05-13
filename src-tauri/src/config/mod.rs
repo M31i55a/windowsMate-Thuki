@@ -1,9 +1,9 @@
 //! Application configuration module.
 //!
-//! This module is the single source of truth for ThukiWin's runtime configuration.
+//! This module is the single source of truth for windowsMate - Thuki's runtime configuration.
 //! Every subsystem reads resolved values from a Tauri-managed `AppConfig`
 //! state. Compiled defaults live in `defaults`; the on-disk file at
-//! `%APPDATA%/com.quietnode.thuki/config.toml` overlays
+//! `%APPDATA%/com.windowsmate.thuki/config.toml` overlays
 //! user customizations on top.
 //!
 //! ## Public surface
@@ -97,19 +97,19 @@ pub fn load(app: &tauri::AppHandle) -> Result<AppConfig, ConfigError> {
 #[cfg(target_os = "windows")]
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn show_fatal_dialog_and_exit(err: &ConfigError) -> ! {
-    use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
     use windows::core::HSTRING;
+    use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
 
-    let title: HSTRING = "ThukiWin".into();
+    let title: HSTRING = "windowsMate - Thuki".into();
     let message = format!(
-        "ThukiWin could not start because of a configuration error.\n\n{err}\n\nCheck write permissions on %APPDATA%/com.quietnode.thuki/"
+        "windowsMate - Thuki could not start because of a configuration error.\n\n{err}\n\nCheck write permissions on %APPDATA%/com.windowsmate.thuki/"
     );
     let message_h: HSTRING = message.into();
 
     unsafe {
         let _ = MessageBoxW(None, &message_h, &title, MB_ICONERROR | MB_OK);
     }
-    eprintln!("thukiwin: [config] fatal: {err}");
+    eprintln!("mate: [config] fatal: {err}");
     std::process::exit(1);
 }
 
@@ -117,7 +117,7 @@ pub fn show_fatal_dialog_and_exit(err: &ConfigError) -> ! {
 #[cfg(not(target_os = "windows"))]
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn show_fatal_dialog_and_exit(err: &ConfigError) -> ! {
-    eprintln!("thukiwin: [config] fatal: {err}");
+    eprintln!("mate: [config] fatal: {err}");
     std::process::exit(1);
 }
 

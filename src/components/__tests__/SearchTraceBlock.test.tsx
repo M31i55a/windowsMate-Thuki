@@ -16,7 +16,7 @@ const SEARCH_STEPS: SearchTraceStep[] = [
     status: 'completed',
     title: 'Understanding the question',
     summary:
-      'This needs fresh web results, so Thuki is switching into search mode.',
+      'This needs fresh web results, so Mate is switching into search mode.',
     detail: 'Using search query: tokio runtime release date',
     queries: ['tokio runtime release date'],
   },

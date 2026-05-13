@@ -9,21 +9,20 @@ use std::sync::{Arc, Mutex};
 
 use tauri::Manager;
 use windows::core::BOOL;
-use windows::Win32::Foundation::{COLORREF, HWND, HINSTANCE, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateSolidBrush, DeleteDC,
-    DeleteObject, EndPaint, FillRect, GetBitmapBits, GetDC, InvalidateRect, ReleaseDC, SelectObject,
-    SRCCOPY, PAINTSTRUCT,
+    DeleteObject, EndPaint, FillRect, GetBitmapBits, GetDC, InvalidateRect, ReleaseDC,
+    SelectObject, PAINTSTRUCT, SRCCOPY,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetCursorPos, GetMessageW,
-    GetSystemMetrics, LoadCursorW, MSG, RegisterClassExW, SetLayeredWindowAttributes,
-    ShowWindow, TranslateMessage, WNDCLASSEXW, WINDOW_EX_STYLE, WINDOW_STYLE,
+    GetSystemMetrics, LoadCursorW, RegisterClassExW, SetLayeredWindowAttributes, ShowWindow,
+    TranslateMessage, IDC_CROSS, LWA_ALPHA, MSG, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
+    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE, WM_ERASEBKGND,
+    WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_PAINT, WM_RBUTTONDOWN, WNDCLASSEXW,
     WS_EX_LAYERED, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP, WS_VISIBLE,
-    IDC_CROSS, LWA_ALPHA, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
-    SM_YVIRTUALSCREEN, SW_SHOW, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MOUSEMOVE, WM_PAINT, WM_RBUTTONDOWN,
 };
 
 // ─── Full-screen capture (all monitors) ──────────────────────────────────────
@@ -127,7 +126,7 @@ struct RegionSelectionState {
 }
 
 /// Global state for the region selection window proc, protected by a Mutex.
-static SELECTION_STATE: std::sync::LazyLock<Mutex<Option<Arc<Mutex<RegionSelectionState>>>>> = 
+static SELECTION_STATE: std::sync::LazyLock<Mutex<Option<Arc<Mutex<RegionSelectionState>>>>> =
     std::sync::LazyLock::new(|| Mutex::new(None));
 
 fn set_selection_state(state: Arc<Mutex<RegionSelectionState>>) {
@@ -259,22 +258,42 @@ unsafe extern "system" fn region_selection_wndproc(
                         let blue = CreateSolidBrush(COLORREF(0x00D77800));
                         let _ = FillRect(
                             hdc,
-                            &RECT { left: x1, top: y1, right: x2, bottom: y1 + 2 },
+                            &RECT {
+                                left: x1,
+                                top: y1,
+                                right: x2,
+                                bottom: y1 + 2,
+                            },
                             blue,
                         );
                         let _ = FillRect(
                             hdc,
-                            &RECT { left: x1, top: y2 - 2, right: x2, bottom: y2 },
+                            &RECT {
+                                left: x1,
+                                top: y2 - 2,
+                                right: x2,
+                                bottom: y2,
+                            },
                             blue,
                         );
                         let _ = FillRect(
                             hdc,
-                            &RECT { left: x1, top: y1, right: x1 + 2, bottom: y2 },
+                            &RECT {
+                                left: x1,
+                                top: y1,
+                                right: x1 + 2,
+                                bottom: y2,
+                            },
                             blue,
                         );
                         let _ = FillRect(
                             hdc,
-                            &RECT { left: x2 - 2, top: y1, right: x2, bottom: y2 },
+                            &RECT {
+                                left: x2 - 2,
+                                top: y1,
+                                right: x2,
+                                bottom: y2,
+                            },
                             blue,
                         );
                         let _ = DeleteObject(blue.into());
@@ -335,9 +354,9 @@ pub async fn capture_screenshot_command(
     let state_clone = state.clone();
 
     let _ = app_handle.run_on_main_thread(move || {
-        let class_name: Vec<u16> = "ThukiRegionSelector\0".encode_utf16().collect();
+        let class_name: Vec<u16> = "MateRegionSelector\0".encode_utf16().collect();
 
-        let window_title: Vec<u16> = "ThukiRegionSelector0".encode_utf16().collect();
+        let window_title: Vec<u16> = "MateRegionSelector0".encode_utf16().collect();
         let wnd_class = WNDCLASSEXW {
             cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
             style: Default::default(),
@@ -408,7 +427,9 @@ pub async fn capture_screenshot_command(
                     }
                 }
 
-                unsafe { let _ = DestroyWindow(h); };
+                unsafe {
+                    let _ = DestroyWindow(h);
+                };
             }
             Err(_) => {
                 let mut s = state_clone.lock().unwrap();
@@ -431,7 +452,14 @@ pub async fn capture_screenshot_command(
 
     let (cancelled, is_done, x1, y1, x2, y2) = {
         let s = state.lock().unwrap();
-        (s.cancelled, s.is_done, s.start_x.min(s.end_x), s.start_y.min(s.end_y), s.start_x.max(s.end_x), s.start_y.max(s.end_y))
+        (
+            s.cancelled,
+            s.is_done,
+            s.start_x.min(s.end_x),
+            s.start_y.min(s.end_y),
+            s.start_x.max(s.end_x),
+            s.start_y.max(s.end_y),
+        )
     };
 
     if cancelled || !is_done {
@@ -495,7 +523,9 @@ pub async fn capture_screenshot_command(
 /// Used by the agent mode loop where the overlay must remain visible.
 #[cfg(target_os = "windows")]
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub async fn capture_silent_screenshot_command(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn capture_silent_screenshot_command(
+    app_handle: tauri::AppHandle,
+) -> Result<String, String> {
     let base_dir = app_handle
         .path()
         .app_data_dir()

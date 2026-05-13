@@ -1,11 +1,11 @@
 [package]
-name = "thuki"
+name = "windows-mate-thuki"
 version = "0.5.0"
-description = "ThukiWin: The context-aware floating secretary for Windows"
+description = "windowsMate - Thuki: The context-aware floating secretary for Windows"
 authors = ["ayzekhdawy"]
 license = "Apache-2.0"
-repository = "https://github.com/ayzekhdawy/thukiwin"
-homepage = "https://github.com/ayzekhdawy/thukiwin"
+repository = "https://github.com/ayzekhdawy/windowsMate-Thuki"
+homepage = "https://github.com/ayzekhdawy/windowsMate-Thuki"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -14,7 +14,7 @@ edition = "2021"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "thuki_agent_lib"
+name = "windows_mate_thuki_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

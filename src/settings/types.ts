@@ -96,7 +96,7 @@ export function describeConfigError(err: unknown): string {
     case 'type_mismatch':
       return e.message ?? 'Wrong type for this field.';
     case 'parse':
-      return 'config.toml has a syntax error. Restart ThukiWin to recover.';
+      return 'config.toml has a syntax error. Restart windowsMate - Thuki to recover.';
     case 'seed_failed':
       return `Couldn't write defaults: ${e.source ?? ''}.`;
     default:

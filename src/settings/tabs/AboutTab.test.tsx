@@ -45,7 +45,7 @@ describe('AboutTab', () => {
   it('renders the Updates hero showing up-to-date status and a check button', async () => {
     render(<AboutTab {...SAMPLE_PROPS} />);
     await waitFor(() =>
-      expect(screen.getByText('Thuki is up to date')).toBeInTheDocument(),
+      expect(screen.getByText('Mate is up to date')).toBeInTheDocument(),
     );
     expect(
       screen.getByRole('button', { name: /check for updates/i }),
@@ -93,7 +93,7 @@ describe('AboutTab', () => {
     });
     render(<AboutTab {...SAMPLE_PROPS} />);
     await waitFor(() =>
-      expect(screen.getByText('Thuki 0.9.0 is ready')).toBeInTheDocument(),
+      expect(screen.getByText('Mate 0.9.0 is ready')).toBeInTheDocument(),
     );
   });
 
@@ -209,7 +209,7 @@ describe('AboutTab', () => {
   it('renders the File section with Reveal and Refresh buttons', async () => {
     render(<AboutTab {...SAMPLE_PROPS} />);
     await waitFor(() =>
-      screen.getByRole('button', { name: /reveal thuki app data/i }),
+      screen.getByRole('button', { name: /reveal mate app data/i }),
     );
     expect(
       screen.getByRole('button', { name: /refresh config\.toml/i }),
