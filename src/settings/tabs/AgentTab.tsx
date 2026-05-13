@@ -73,7 +73,10 @@ export function AgentTab({ config, resyncToken, onSaved }: AgentTabProps) {
   const [orKey, setOrKey] = useState('');
   const [orConnecting, setOrConnecting] = useState(false);
   const [orError, setOrError] = useState<string | null>(null);
-  const [orLabel, setOrLabel] = useState<string | null>(null);
+  // Pre-seed label so connected state shows immediately (avoids registration form flash while SQLite loads).
+  const [orLabel, setOrLabel] = useState<string | null>(
+    config.agent.provider === 'openrouter' ? 'OpenRouter' : null,
+  );
   const [orModel, setOrModel] = useState(OPENROUTER_DEFAULT_MODEL);
 
   const isOpenRouter = config.agent.provider === 'openrouter';
@@ -127,6 +130,7 @@ export function AgentTab({ config, resyncToken, onSaved }: AgentTabProps) {
       await invoke('set_setting', { key: 'api_key_openrouter', value: orKey });
       await invoke('set_setting', { key: 'openrouter_label', value: label });
       await invoke('set_setting', { key: 'openrouter_model', value: orModel });
+      await invoke('set_setting', { key: 'provider_mode', value: 'openrouter' });
       // Switch TOML config to openrouter
       await invoke('set_config_field', { section: 'agent', key: 'provider', value: 'openrouter' });
       await invoke('set_config_field', { section: 'agent', key: 'model', value: orModel });
@@ -151,6 +155,8 @@ export function AgentTab({ config, resyncToken, onSaved }: AgentTabProps) {
 
   async function disconnectOpenRouter() {
     try {
+      // Clear SQLite persistence so disconnect survives app restart.
+      await invoke('set_setting', { key: 'provider_mode', value: 'local' });
       // Switch back to Ollama
       await invoke('set_config_field', { section: 'agent', key: 'provider', value: 'ollama' });
       await invoke('set_config_field', { section: 'agent', key: 'model', value: 'llama3.2' });
