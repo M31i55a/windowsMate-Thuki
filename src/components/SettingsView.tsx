@@ -18,7 +18,7 @@ const PROVIDER_MODELS: Record<AgentProvider, string[]> = {
   ollama: ['gemini-3-flash-preview', 'llama3.2-vision', 'llama3.2', 'mistral'],
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
   anthropic: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
-  openrouter: ['openai/gpt-4o', 'anthropic/claude-sonnet-4', 'google/gemini-2.5-pro', 'meta-llama/llama-4-scout'],
+  openrouter: ['openai/gpt-4o', 'anthropic/claude-sonnet-4', 'google/gemini-2.5-pro', 'meta-llama/llama-4-scout', 'baidu/cobuddy:free', 'poolside/laguna-xs.2:free', 'minimax/minimax-m2.5:free', 'liquid/lfm-2.5-1.2b-thinking:free', 'openai/gpt-oss-120b:free', 'qwen/qwen3-coder:free'],
 };
 
 const PROVIDER_URLS: Record<AgentProvider, string> = {

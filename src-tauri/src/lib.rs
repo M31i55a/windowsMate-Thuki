@@ -252,6 +252,11 @@ fn show_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::ActivationCo
             let _ = windows_focus::stop_focus_listener();
             let handle = app_handle.clone();
             let _ = windows_focus::start_focus_listener(Arc::new(move |_hwnd| {
+                // Suppress minibar while the agent is executing — it legitimately
+                // moves focus to other windows as part of its task.
+                if crate::agent::AGENT_RUNNING.load(Ordering::SeqCst) {
+                    return;
+                }
                 if !windows_focus::is_minibar_active() {
                     windows_focus::enter_minibar();
                     let _ = handle.emit(MINIBAR_EVENT, ());
@@ -334,6 +339,13 @@ async fn open_settings_window(app_handle: tauri::AppHandle) -> Result<(), String
 /// On Windows, if the overlay is in minibar mode, double-tap Ctrl restores
 /// the full overlay instead of hiding it.
 fn toggle_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::ActivationContext) {
+    // Suppress hotkey toggles while the agent is executing to prevent the
+    // overlay from popping open or hiding mid-task.
+    #[cfg(target_os = "windows")]
+    if crate::agent::AGENT_RUNNING.load(Ordering::SeqCst) {
+        return;
+    }
+
     #[cfg(target_os = "windows")]
     if windows_focus::is_minibar_active() {
         // Restore from minibar — the window is already visible, just small.
@@ -349,6 +361,9 @@ fn toggle_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::Activation
                 let _ = windows_focus::stop_focus_listener();
                 let h = handle.clone();
                 let _ = windows_focus::start_focus_listener(Arc::new(move |_hwnd| {
+                    if crate::agent::AGENT_RUNNING.load(Ordering::SeqCst) {
+                        return;
+                    }
                     if !windows_focus::is_minibar_active() {
                         windows_focus::enter_minibar();
                         let _ = h.emit(MINIBAR_EVENT, ());
@@ -439,6 +454,9 @@ fn exit_minibar_size(app_handle: tauri::AppHandle) {
             let _ = windows_focus::stop_focus_listener();
             let h = handle.clone();
             let _ = windows_focus::start_focus_listener(Arc::new(move |_hwnd| {
+                if crate::agent::AGENT_RUNNING.load(Ordering::SeqCst) {
+                    return;
+                }
                 if !windows_focus::is_minibar_active() {
                     windows_focus::enter_minibar();
                     let _ = h.emit(MINIBAR_EVENT, ());

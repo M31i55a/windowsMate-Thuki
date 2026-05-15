@@ -9,15 +9,24 @@
 //!   The model returns structured JSON tool calls that map directly to AgentAction.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use tokio_util::sync::CancellationToken;
 
 use crate::computer_control::{self, AgentAction};
 use crate::providers::{self, ProviderChunk, ProviderConfig, ToolCall};
+
+/// Set to `true` while the agent loop is running. Checked by the window focus
+/// listener and hotkey activator to suppress interference during agent execution.
+pub static AGENT_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// Cached per-process screenshot consent for cloud agent runs.
+/// Set to `true` on first user approval; avoids repeated SQLite lookups.
+static SCREENSHOT_CONSENT_GRANTED: AtomicBool = AtomicBool::new(false);
 
 // ─── Status types ───────────────────────────────────────────────────────────────
 
@@ -59,7 +68,9 @@ pub enum AgentEvent {
 // ─── Confirmation state ─────────────────────────────────────────────────────────
 
 /// Number of actions that require confirmation before auto-executing.
-const LEARNING_CONFIRMATION_LIMIT: u32 = 3;
+/// Set to 0 so the agent runs uninterrupted — the user already consented
+/// by invoking /do, and can stop the agent at any time via the Stop button.
+const LEARNING_CONFIRMATION_LIMIT: u32 = 0;
 
 /// Actions that always require confirmation regardless of learning state.
 /// Opening applications is considered safe (the user explicitly triggered agent mode),
@@ -466,6 +477,12 @@ async fn run_tool_use_loop(
 
     eprintln!("mate: [agent] cloud loop screenshot_allowed={screenshot_allowed}");
 
+    // Hide the overlay so it doesn't appear in screenshots and cannot
+    // receive stray TYPE actions while the agent loop is running.
+    if let Some(w) = app_handle.get_webview_window("main") {
+        let _ = w.hide();
+    }
+
     // Build initial conversation.
     let mut messages: Vec<crate::commands::ChatMessage> = vec![
         crate::commands::ChatMessage {
@@ -487,10 +504,7 @@ async fn run_tool_use_loop(
     for iteration in 0..MAX_ITERATIONS {
         if state.is_cancelled() {
             state.set_status(AgentStatus::Done);
-            let _ = app_handle.emit(
-                "mate://agent",
-                AgentEvent::StatusChanged(AgentStatus::Done),
-            );
+            let _ = app_handle.emit("mate://agent", AgentEvent::StatusChanged(AgentStatus::Done));
             return Ok(());
         }
 
@@ -629,10 +643,7 @@ async fn run_tool_use_loop(
             let summary = accumulated_text.trim().to_string();
             let _ = app_handle.emit("mate://agent", AgentEvent::Done { summary });
             state.set_status(AgentStatus::Done);
-            let _ = app_handle.emit(
-                "mate://agent",
-                AgentEvent::StatusChanged(AgentStatus::Done),
-            );
+            let _ = app_handle.emit("mate://agent", AgentEvent::StatusChanged(AgentStatus::Done));
             return Ok(());
         }
 
@@ -646,10 +657,8 @@ async fn run_tool_use_loop(
         for tc in &tool_calls {
             if state.is_cancelled() {
                 state.set_status(AgentStatus::Done);
-                let _ = app_handle.emit(
-                    "mate://agent",
-                    AgentEvent::StatusChanged(AgentStatus::Done),
-                );
+                let _ =
+                    app_handle.emit("mate://agent", AgentEvent::StatusChanged(AgentStatus::Done));
                 return Ok(());
             }
 
@@ -673,10 +682,8 @@ async fn run_tool_use_loop(
                     },
                 );
                 state.set_status(AgentStatus::Done);
-                let _ = app_handle.emit(
-                    "mate://agent",
-                    AgentEvent::StatusChanged(AgentStatus::Done),
-                );
+                let _ =
+                    app_handle.emit("mate://agent", AgentEvent::StatusChanged(AgentStatus::Done));
                 return Ok(());
             }
 
@@ -761,9 +768,11 @@ async fn run_tool_use_loop(
         });
 
         // Add tool result as user message for next iteration.
+        // Explicitly tell the model to call no tools when done so the
+        // empty-tool-calls exit path fires reliably.
         messages.push(crate::commands::ChatMessage {
             role: "user".to_string(),
-            content: "Action executed. Here is the updated screen.".to_string(),
+            content: "Action executed. What is the next step? If the task is complete, respond with plain text only — do NOT call any tools.".to_string(),
             images: None,
         });
 
@@ -778,10 +787,7 @@ async fn run_tool_use_loop(
         },
     );
     state.set_status(AgentStatus::Done);
-    let _ = app_handle.emit(
-        "mate://agent",
-        AgentEvent::StatusChanged(AgentStatus::Done),
-    );
+    let _ = app_handle.emit("mate://agent", AgentEvent::StatusChanged(AgentStatus::Done));
     Ok(())
 }
 
@@ -837,6 +843,12 @@ async fn run_text_parse_loop(
 
     eprintln!("mate: [agent] model={model} has_vision={has_vision}");
 
+    // Hide the overlay so it doesn't appear in screenshots and cannot
+    // receive stray TYPE actions while the agent loop is running.
+    if let Some(w) = app_handle.get_webview_window("main") {
+        let _ = w.hide();
+    }
+
     let mut conversation: Vec<serde_json::Value> = vec![
         serde_json::json!({
             "role": "system",
@@ -851,10 +863,7 @@ async fn run_text_parse_loop(
     for iteration in 0..MAX_ITERATIONS {
         if state.is_cancelled() {
             state.set_status(AgentStatus::Done);
-            let _ = app_handle.emit(
-                "mate://agent",
-                AgentEvent::StatusChanged(AgentStatus::Done),
-            );
+            let _ = app_handle.emit("mate://agent", AgentEvent::StatusChanged(AgentStatus::Done));
             return Ok(());
         }
 
@@ -972,10 +981,8 @@ async fn run_text_parse_loop(
         for line in response.lines() {
             if state.is_cancelled() {
                 state.set_status(AgentStatus::Done);
-                let _ = app_handle.emit(
-                    "mate://agent",
-                    AgentEvent::StatusChanged(AgentStatus::Done),
-                );
+                let _ =
+                    app_handle.emit("mate://agent", AgentEvent::StatusChanged(AgentStatus::Done));
                 return Ok(());
             }
 
@@ -1013,10 +1020,8 @@ async fn run_text_parse_loop(
                     },
                 );
                 state.set_status(AgentStatus::Done);
-                let _ = app_handle.emit(
-                    "mate://agent",
-                    AgentEvent::StatusChanged(AgentStatus::Done),
-                );
+                let _ =
+                    app_handle.emit("mate://agent", AgentEvent::StatusChanged(AgentStatus::Done));
                 return Ok(());
             }
 
@@ -1097,6 +1102,17 @@ async fn run_text_parse_loop(
             tokio::time::sleep(Duration::from_millis(ACTION_DELAY_MS)).await;
         }
 
+        // For text-only models: inject a user feedback message so the model
+        // knows its action was executed and must decide the next step.
+        // Vision models already get this feedback via the screenshot at the
+        // start of the next iteration.
+        if !has_vision && actions_executed > 0 {
+            conversation.push(serde_json::json!({
+                "role": "user",
+                "content": "Action executed. What is the next step to complete the task? If done, respond with DONE <summary>.",
+            }));
+        }
+
         tokio::time::sleep(Duration::from_millis(SCREENSHOT_DELAY_MS)).await;
 
         if actions_executed == 0 && !state.is_cancelled() {
@@ -1109,10 +1125,7 @@ async fn run_text_parse_loop(
                 },
             );
             state.set_status(AgentStatus::Done);
-            let _ = app_handle.emit(
-                "mate://agent",
-                AgentEvent::StatusChanged(AgentStatus::Done),
-            );
+            let _ = app_handle.emit("mate://agent", AgentEvent::StatusChanged(AgentStatus::Done));
             return Ok(());
         }
     }
@@ -1125,19 +1138,16 @@ async fn run_text_parse_loop(
         },
     );
     state.set_status(AgentStatus::Done);
-    let _ = app_handle.emit(
-        "mate://agent",
-        AgentEvent::StatusChanged(AgentStatus::Done),
-    );
+    let _ = app_handle.emit("mate://agent", AgentEvent::StatusChanged(AgentStatus::Done));
     Ok(())
 }
 
 // ─── Screenshot consent (online/cloud models only) ───────────────────────────────
 
 /// Ask the user once whether it is OK to send screenshots to a cloud provider.
-/// Uses the same `ConfirmationRequired` event as action confirmations so the
-/// frontend can display a tailored privacy warning.  Returns `true` if the
-/// user approves, `false` on rejection or 30-second timeout.
+/// Returns `true` immediately if the user already consented in a previous session
+/// (persisted in SQLite as `agent_screenshot_consent=true`).
+/// On first use, shows a one-time confirmation dialog and saves the answer.
 ///
 /// This is called **only** for cloud provider (tool-use) loops.  Local Ollama
 /// models never call this — screenshots stay on-device and do not require
@@ -1147,6 +1157,30 @@ async fn request_screenshot_consent(
     state: &Arc<AgentState>,
     provider_name: &str,
 ) -> bool {
+    // Return immediately if already consented in this process session.
+    if SCREENSHOT_CONSENT_GRANTED.load(Ordering::SeqCst) {
+        return true;
+    }
+
+    // Also check SQLite for consent stored in a previous session.
+    {
+        let db_state = app_handle.state::<crate::history::Database>();
+        let consented = db_state
+            .0
+            .lock()
+            .ok()
+            .and_then(|conn| {
+                crate::database::get_config(&conn, "agent_screenshot_consent")
+                    .ok()
+                    .flatten()
+            })
+            .map_or(false, |v| v == "true");
+        if consented {
+            SCREENSHOT_CONSENT_GRANTED.store(true, Ordering::SeqCst);
+            return true;
+        }
+    }
+
     const CONSENT_ACTION_ID: &str = "screenshot_consent";
 
     let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
@@ -1172,10 +1206,19 @@ async fn request_screenshot_consent(
         },
     );
 
-    match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(true)) => true,
-        _ => false,
+    let approved = matches!(
+        tokio::time::timeout(Duration::from_secs(30), rx).await,
+        Ok(Ok(true))
+    );
+
+    // Cache in-process so subsequent runs this session skip the dialog.
+    // SQLite persistence is handled by the frontend when the user connects
+    // OpenRouter (set_setting agent_screenshot_consent=true).
+    if approved {
+        SCREENSHOT_CONSENT_GRANTED.store(true, Ordering::SeqCst);
     }
+
+    approved
 }
 
 // ─── Screenshot capture ──────────────────────────────────────────────────────────
@@ -1250,8 +1293,15 @@ pub async fn start_agent_mode(
     let app_handle = app_handle.clone();
 
     tauri::async_runtime::spawn(async move {
-        if let Err(e) = run_agent_loop(app_handle, state, task, model, ollama_url).await {
+        AGENT_RUNNING.store(true, Ordering::SeqCst);
+        if let Err(e) = run_agent_loop(app_handle.clone(), state, task, model, ollama_url).await {
             eprintln!("mate: [agent] error: {e}");
+        }
+        AGENT_RUNNING.store(false, Ordering::SeqCst);
+        // Re-show the overlay so the user can see the agent result.
+        if let Some(w) = app_handle.get_webview_window("main") {
+            let _ = w.show();
+            let _ = w.set_focus();
         }
     });
 
@@ -1261,6 +1311,7 @@ pub async fn start_agent_mode(
 #[tauri::command]
 pub fn stop_agent_mode(state: tauri::State<'_, Arc<AgentState>>) -> Result<(), String> {
     state.cancel();
+    AGENT_RUNNING.store(false, Ordering::SeqCst);
     Ok(())
 }
 

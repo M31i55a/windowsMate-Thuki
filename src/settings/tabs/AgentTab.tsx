@@ -58,6 +58,12 @@ const OPENROUTER_MODELS = [
   'google/gemma-4-26b-a4b-it:free',
   'inclusionai/ring-2.6-1t:free',
   'arcee-ai/trinity-large-thinking:free',
+  'baidu/cobuddy:free',
+  'poolside/laguna-xs.2:free',
+  'minimax/minimax-m2.5:free',
+  'liquid/lfm-2.5-1.2b-thinking:free',
+  'openai/gpt-oss-120b:free',
+  'qwen/qwen3-coder:free',
 ] as const;
 
 interface AgentTabProps {
@@ -131,6 +137,8 @@ export function AgentTab({ config, resyncToken, onSaved }: AgentTabProps) {
       await invoke('set_setting', { key: 'openrouter_label', value: label });
       await invoke('set_setting', { key: 'openrouter_model', value: orModel });
       await invoke('set_setting', { key: 'provider_mode', value: 'openrouter' });
+      // Grant screenshot consent — user chose an online provider and accepts cloud data sharing.
+      await invoke('set_setting', { key: 'agent_screenshot_consent', value: 'true' });
       // Switch TOML config to openrouter
       await invoke('set_config_field', { section: 'agent', key: 'provider', value: 'openrouter' });
       await invoke('set_config_field', { section: 'agent', key: 'model', value: orModel });
