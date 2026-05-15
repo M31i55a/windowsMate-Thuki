@@ -221,44 +221,6 @@ export function SettingsWindow() {
 
   return (
     <div className={styles.window} onMouseDown={handleDragStart}>
-      {/* Close button for Windows */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'flex-end',
-          padding: '4px 8px 0',
-          flexShrink: 0,
-        }}
-      >
-        <button
-          type="button"
-          onClick={handleHide}
-          style={{
-            width: 28,
-            height: 28,
-            border: 'none',
-            background: 'transparent',
-            color: 'var(--color-text-secondary)',
-            cursor: 'pointer',
-            borderRadius: 4,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 14,
-          }}
-          aria-label="Close settings"
-        >
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-            <path
-              d="M1 1L9 9M9 1L1 9"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
-      </div>
-
       {marker && !markerDismissed ? (
         <div className={styles.banner} role="alert">
           <span className={styles.bannerIcon} aria-hidden>

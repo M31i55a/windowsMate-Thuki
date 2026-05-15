@@ -126,6 +126,21 @@
 }
 .bodyScrollable { overflow-y: auto; }
 
+/* ─── Custom scrollbar (matches chat window) ─── */
+.bodyScrollable::-webkit-scrollbar {
+  width: 3px;
+}
+.bodyScrollable::-webkit-scrollbar-track {
+  background: transparent;
+}
+.bodyScrollable::-webkit-scrollbar-thumb {
+  background: rgba(255, 141, 92, 0.7);
+  border-radius: 2px;
+}
+.bodyScrollable::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 141, 92, 1);
+}
+
 .section { margin-bottom: 28px; }
 .section:last-of-type { margin-bottom: 8px; }
 .section + .section {
