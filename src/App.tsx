@@ -61,6 +61,8 @@ const HIDE_COMMIT_DELAY_MS = 350;
 const OVERLAY_WIDTH = 650;
 /** Total transparent padding around the morphing container: pt-2(8) + pb-6(24) + motion py-2(16). */
 const CONTAINER_VERTICAL_PADDING = 48;
+/** Padding in chat mode — no outer glass gap, window fills edge-to-edge. */
+const CONTAINER_VERTICAL_PADDING_CHAT = 0;
 /** Max morphing-container height in chat mode (matches `max-h-[600px]`) + vertical padding. */
 const MAX_CHAT_WINDOW_HEIGHT = 600 + CONTAINER_VERTICAL_PADDING;
 
@@ -300,6 +302,8 @@ function App() {
     setIsModelPickerOpen(false);
   }, []);
   const previousIsChatModeRef = useRef(isChatMode);
+  const isChatModeRef = useRef(isChatMode);
+  useEffect(() => { isChatModeRef.current = isChatMode; }, [isChatMode]);
 
   /**
    * The bookmark save button is active once the AI has produced at least one
@@ -367,10 +371,13 @@ function App() {
             if (overlayStateRef.current === 'minibar') return;
             for (const entry of entries) {
               const rect = entry.target.getBoundingClientRect();
-              // Total vertical room: 8px (pt-2) + 24px (pb-6) + 16px (motion py-2) = 48px.
-              // This ensures the tightened drop shadows aren't clipped by the native window edge.
+              // In chat mode padding is removed so no extra room is needed;
+              // in bar mode keep the 48px clearance for drop shadows.
+              const vPad = isChatModeRef.current
+                ? CONTAINER_VERTICAL_PADDING_CHAT
+                : CONTAINER_VERTICAL_PADDING;
               let targetHeight =
-                Math.ceil(rect.height) + CONTAINER_VERTICAL_PADDING;
+                Math.ceil(rect.height) + vPad;
 
               // During streaming, only allow the window to grow (never
               // shrink) to prevent jitter from Streamdown block reflows.
