@@ -1,3 +1,8 @@
+
+
+
+
+
 <h1 align="center">
   Mate — Windows AI Assistant
 </h1>
@@ -41,13 +46,13 @@ Mate (based on Thuki — Vietnamese _thư kí_ for secretary) is a lightweight W
 
 Double-tap Control <kbd>Ctrl</kbd> to summon Mate from anywhere. Ask a question, get an answer, and dismiss. Use `/screen` or the screenshot button to capture your screen and attach it as context.
 
-https://github.com/user-attachments/assets/57df0efe-24eb-4875-a83d-e605e0c6f8b4
+[https://github.com/user-attachments/assets/57df0efe-24eb-4875-a83d-e605e0c6f8b4](https://github.com/user-attachments/assets/6a03da1b-4a1b-4c45-b251-19bcaba995b0)
 
 ### Overlay Mode
 
 Mate floats above every app. Highlight text anywhere, double-tap Control <kbd>Ctrl</kbd>, and Mate opens with your selection pre-filled as a quote, ready to ask about.
 
-https://github.com/user-attachments/assets/f52b55f7-479d-4c2e-a361-1553fe132712
+[https://github.com/user-attachments/assets/f52b55f7-479d-4c2e-a361-1553fe132712](https://github.com/user-attachments/assets/bc9fec9f-d12d-480e-be03-22e2d50699b6)
 
 ## Why Mate?
 
