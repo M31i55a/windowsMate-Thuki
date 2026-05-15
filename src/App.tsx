@@ -1647,7 +1647,7 @@ function App() {
       onDragOver={handleRootDragOver}
       onDragLeave={handleRootDragLeave}
       onDrop={handleRootDrop}
-      className={`flex flex-col items-center ${growsUpward ? 'justify-end' : 'justify-start'} h-screen w-screen px-3 pt-2 pb-6 bg-transparent overflow-visible`}
+      className={`flex flex-col items-center ${growsUpward ? 'justify-end' : 'justify-start'} h-screen w-screen ${isChatMode ? 'p-0' : 'px-3 pt-2 pb-6'} bg-transparent overflow-visible`}
     >
       <AnimatePresence mode="wait">
         {shouldRenderOverlay ? (
@@ -1657,7 +1657,7 @@ function App() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -12, scale: 0.98 }}
             transition={{ type: 'spring', stiffness: 260, damping: 26, mass: 0.8 }}
-            className="w-full max-w-2xl px-2 py-2 overflow-visible"
+            className={`w-full max-w-2xl ${isChatMode ? 'p-0' : 'px-2 py-2'} overflow-visible`}
           >
             {/* Relative wrapper — serves as the positioning context for the
                 chat-mode history dropdown so it can sit outside the morphing
@@ -1678,7 +1678,7 @@ function App() {
                   background: `rgba(32,32,32,var(--app-bg-opacity, 0.92))`,
                   backdropFilter: 'blur(var(--chat-bg-blur, 10px))',
                 }}
-                className={`morphing-container relative flex flex-col max-h-[600px] overflow-hidden rounded-xl`}
+                className={`morphing-container relative flex flex-col max-h-150 overflow-hidden ${isChatMode ? 'rounded-none' : 'rounded-xl'}`}
               >
                 {/* Model Picker Panel — floats above conversation when open */}
                 {isModelPickerOpen && (
