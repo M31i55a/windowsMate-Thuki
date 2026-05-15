@@ -27,9 +27,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::context::{ActivationContext, ScreenRect};
 
-use windows::Win32::UI::WindowsAndMessaging::{
-    GetGUIThreadInfo, GetWindowRect, GUITHREADINFO,
-};
+use windows::Win32::UI::WindowsAndMessaging::{GetGUIThreadInfo, GetWindowRect, GUITHREADINFO};
 
 // ─── Constants ──────────────────────────────────────────────────────────────────
 

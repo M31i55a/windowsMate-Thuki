@@ -165,7 +165,11 @@ fn request_overlay_hide(app_handle: &tauri::AppHandle) {
 /// the window near the cursor or selection, using Tauri's cross-platform
 /// monitor enumeration for screen bounds.
 #[cfg(target_os = "windows")]
-fn show_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::ActivationContext, auto_explain: bool) {
+fn show_overlay(
+    app_handle: &tauri::AppHandle,
+    ctx: crate::context::ActivationContext,
+    auto_explain: bool,
+) {
     let was_visible = OVERLAY_INTENDED_VISIBLE.swap(true, Ordering::SeqCst);
     if was_visible {
         if auto_explain {
@@ -298,7 +302,11 @@ fn show_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::ActivationCo
 /// Shows the overlay on platforms that have no platform-specific implementation.
 /// Falls back to a simple show + focus with no positioning.
 #[cfg(not(target_os = "windows"))]
-fn show_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::ActivationContext, auto_explain: bool) {
+fn show_overlay(
+    app_handle: &tauri::AppHandle,
+    ctx: crate::context::ActivationContext,
+    auto_explain: bool,
+) {
     if OVERLAY_INTENDED_VISIBLE.swap(true, Ordering::SeqCst) {
         return;
     }
@@ -392,7 +400,15 @@ fn toggle_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::Activation
                     }
                 }));
             }
-            emit_overlay_visibility(&handle, OVERLAY_VISIBILITY_SHOW, None, None, None, None, false);
+            emit_overlay_visibility(
+                &handle,
+                OVERLAY_VISIBILITY_SHOW,
+                None,
+                None,
+                None,
+                None,
+                false,
+            );
         });
         return;
     }
@@ -524,7 +540,11 @@ fn notify_frontend_ready(app_handle: tauri::AppHandle, db: tauri::State<history:
             }
         }
 
-        show_overlay(&app_handle, crate::context::ActivationContext::empty(), false);
+        show_overlay(
+            &app_handle,
+            crate::context::ActivationContext::empty(),
+            false,
+        );
     }
 }
 

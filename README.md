@@ -54,6 +54,10 @@ Mate floats above every app. Highlight text anywhere, double-tap Control <kbd>Ct
 
 [https://github.com/user-attachments/assets/f52b55f7-479d-4c2e-a361-1553fe132712](https://github.com/user-attachments/assets/bc9fec9f-d12d-480e-be03-22e2d50699b6)
 
+### Quick Explain (Ctrl+Space)
+
+Select any text and press <kbd>Ctrl</kbd>+<kbd>Space</kbd> to instantly explain it. Mate opens (or resets if already open), captures your selection via clipboard, and automatically asks _"What is this, and what is it about?"_ — no typing required.
+
 ## Why Mate?
 
 Most AI tools require accounts, API keys, or subscriptions that bill you per token. Mate is different:
@@ -68,6 +72,7 @@ Most AI tools require accounts, API keys, or subscriptions that bill you per tok
 ## Features
 
 - **Always available:** double-tap Control <kbd>Ctrl</kbd> to summon the overlay from any app
+- **Quick Explain:** select any text and press <kbd>Ctrl</kbd>+<kbd>Space</kbd> — Mate opens and instantly explains your selection without any extra typing
 - **Context-aware quotes:** highlight any text, then double-tap Control <kbd>Ctrl</kbd> to open Mate with the selected text pre-filled as a quote
 - **Throwaway conversations:** fast, lightweight interactions without the overhead of a full chat app
 - **Conversation history:** persist and revisit past conversations across sessions
@@ -107,6 +112,7 @@ This port adds several Windows-native improvements on top of the original Thuki:
 | **Gateway API server**       | Expose Mate's backend as a local OpenAI-compatible HTTP endpoint for third-party tools                                       |
 | **Narrower chrome**          | Tighter padding on the overlay and chat area for a denser, more focused layout                                               |
 | **Header model chip**        | Active model displayed as a compact chip in the chat header — click to switch without leaving chat                           |
+| **Quick Explain (Ctrl+Space)** | Select text anywhere, press <kbd>Ctrl</kbd>+<kbd>Space</kbd> — Mate opens and auto-submits an explain query for the selection |
 
 ## Getting Started
 
