@@ -111,6 +111,9 @@ struct VisibilityPayload {
     window_y: Option<f64>,
     /// Logical Y of the screen bottom edge (monitor origin + height).
     screen_bottom_y: Option<f64>,
+    /// When `true` the frontend should automatically submit the selected text
+    /// as an explain query without waiting for user input.
+    auto_explain: bool,
 }
 
 /// Emits a visibility transition to the frontend animation controller.
@@ -121,6 +124,7 @@ fn emit_overlay_visibility(
     window_x: Option<f64>,
     window_y: Option<f64>,
     screen_bottom_y: Option<f64>,
+    auto_explain: bool,
 ) {
     let _ = app_handle.emit(
         OVERLAY_VISIBILITY_EVENT,
@@ -130,6 +134,7 @@ fn emit_overlay_visibility(
             window_x,
             window_y,
             screen_bottom_y,
+            auto_explain,
         },
     );
 }
@@ -148,6 +153,7 @@ fn request_overlay_hide(app_handle: &tauri::AppHandle) {
             None,
             None,
             None,
+            false,
         );
     }
 }
@@ -159,8 +165,22 @@ fn request_overlay_hide(app_handle: &tauri::AppHandle) {
 /// the window near the cursor or selection, using Tauri's cross-platform
 /// monitor enumeration for screen bounds.
 #[cfg(target_os = "windows")]
-fn show_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::ActivationContext) {
-    if OVERLAY_INTENDED_VISIBLE.swap(true, Ordering::SeqCst) {
+fn show_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::ActivationContext, auto_explain: bool) {
+    let was_visible = OVERLAY_INTENDED_VISIBLE.swap(true, Ordering::SeqCst);
+    if was_visible {
+        if auto_explain {
+            // Overlay is already open — replay the entrance animation with the
+            // newly captured text so the frontend resets and auto-submits.
+            emit_overlay_visibility(
+                app_handle,
+                OVERLAY_VISIBILITY_SHOW,
+                ctx.selected_text,
+                None,
+                None,
+                None,
+                true,
+            );
+        }
         return;
     }
 
@@ -271,13 +291,14 @@ fn show_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::ActivationCo
         window_x,
         window_y,
         screen_bottom_y,
+        auto_explain,
     );
 }
 
 /// Shows the overlay on platforms that have no platform-specific implementation.
 /// Falls back to a simple show + focus with no positioning.
 #[cfg(not(target_os = "windows"))]
-fn show_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::ActivationContext) {
+fn show_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::ActivationContext, auto_explain: bool) {
     if OVERLAY_INTENDED_VISIBLE.swap(true, Ordering::SeqCst) {
         return;
     }
@@ -291,6 +312,7 @@ fn show_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::ActivationCo
             None,
             None,
             None,
+            auto_explain,
         );
     }
 }
@@ -370,7 +392,7 @@ fn toggle_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::Activation
                     }
                 }));
             }
-            emit_overlay_visibility(&handle, OVERLAY_VISIBILITY_SHOW, None, None, None, None);
+            emit_overlay_visibility(&handle, OVERLAY_VISIBILITY_SHOW, None, None, None, None, false);
         });
         return;
     }
@@ -378,7 +400,7 @@ fn toggle_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::Activation
     if OVERLAY_INTENDED_VISIBLE.load(Ordering::SeqCst) {
         request_overlay_hide(app_handle);
     } else {
-        show_overlay(app_handle, ctx);
+        show_overlay(app_handle, ctx, false);
     }
 }
 
@@ -502,7 +524,7 @@ fn notify_frontend_ready(app_handle: tauri::AppHandle, db: tauri::State<history:
             }
         }
 
-        show_overlay(&app_handle, crate::context::ActivationContext::empty());
+        show_overlay(&app_handle, crate::context::ActivationContext::empty(), false);
     }
 }
 
@@ -534,7 +556,7 @@ fn finish_onboarding(
                 let _ = window.set_always_on_top(true);
                 let _ = window.set_skip_taskbar(true);
             }
-            show_overlay(&handle, crate::context::ActivationContext::empty());
+            show_overlay(&handle, crate::context::ActivationContext::empty(), false);
         });
     }
 
@@ -543,7 +565,7 @@ fn finish_onboarding(
     {
         let handle = app_handle.clone();
         let _ = app_handle.run_on_main_thread(move || {
-            show_overlay(&handle, crate::context::ActivationContext::empty());
+            show_overlay(&handle, crate::context::ActivationContext::empty(), false);
         });
     }
 
@@ -669,7 +691,7 @@ pub fn run() {
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => {
-                        show_overlay(app, crate::context::ActivationContext::empty());
+                        show_overlay(app, crate::context::ActivationContext::empty(), false);
                     }
                     "quit" => {
                         app.state::<crate::commands::GenerationState>().cancel();
@@ -706,6 +728,24 @@ pub fn run() {
                         let _ = handle.run_on_main_thread(move || toggle_overlay(&handle2, ctx));
                     });
                 });
+
+                // ── Ctrl+Space quick-explain listener ─────────────────
+                let app_handle_qe = app.handle().clone();
+                activator.set_quick_explain(move || {
+                    // Skip while agent is running — the agent controls the window.
+                    if crate::agent::AGENT_RUNNING.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    let handle = app_handle_qe.clone();
+                    let handle2 = app_handle_qe.clone();
+                    std::thread::spawn(move || {
+                        let ctx = crate::windows_activator::capture();
+                        let _ = handle.run_on_main_thread(move || {
+                            show_overlay(&handle2, ctx, true);
+                        });
+                    });
+                });
+
                 app.manage(activator);
             }
 

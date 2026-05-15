@@ -37,6 +37,8 @@ const ACTIVATION_WINDOW: Duration = Duration::from_millis(400);
 const ACTIVATION_COOLDOWN: Duration = Duration::from_millis(600);
 const VK_LCONTROL: i32 = 0xA2;
 const VK_RCONTROL: i32 = 0xA3;
+/// Virtual key code for the Space bar.
+const VK_SPACE: i32 = 0x20;
 
 // ─── Global Hook State ─────────────────────────────────────────────────────────
 
@@ -55,6 +57,15 @@ static GLOBAL_ON_ACTIVATION: LazyLock<Mutex<Option<ActivationCallback>>> =
     LazyLock::new(|| Mutex::new(None));
 
 static GLOBAL_HOOK_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Tracks whether either Ctrl key is currently held. Used to detect Ctrl+Space.
+static CTRL_HELD: AtomicBool = AtomicBool::new(false);
+
+type QuickExplainCallback = Arc<dyn Fn() + Send + Sync>;
+
+#[allow(clippy::type_complexity)]
+static GLOBAL_ON_QUICK_EXPLAIN: LazyLock<Mutex<Option<QuickExplainCallback>>> =
+    LazyLock::new(|| Mutex::new(None));
 
 // ─── Activation Logic ──────────────────────────────────────────────────────────
 
@@ -124,6 +135,19 @@ impl OverlayActivator {
             run_hook_loop(is_active);
         });
     }
+
+    /// Registers the callback invoked when the user presses Ctrl+Space.
+    ///
+    /// The callback is called from the low-level keyboard hook thread, so it
+    /// must be `Send + Sync` and should not block for long.
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    pub fn set_quick_explain<F>(&self, callback: F)
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        let mut cb = GLOBAL_ON_QUICK_EXPLAIN.lock().unwrap();
+        *cb = Some(Arc::new(callback));
+    }
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
@@ -189,6 +213,9 @@ unsafe extern "system" fn keyboard_hook_callback(
         let is_release = wparam_val == 0x0101 || wparam_val == 0x0105;
         let key_down = is_press && !is_release;
 
+        // Track Ctrl held state for Ctrl+Space detection.
+        CTRL_HELD.store(key_down, Ordering::SeqCst);
+
         let mut s = GLOBAL_ACTIVATION_STATE.lock().unwrap();
         if evaluate_activation(&mut s, key_down) {
             let cb = GLOBAL_ON_ACTIVATION.lock().unwrap();
@@ -196,6 +223,15 @@ unsafe extern "system" fn keyboard_hook_callback(
                 callback();
             }
         }
+    } else if vk_code == VK_SPACE && is_press && CTRL_HELD.load(Ordering::SeqCst) {
+        // Ctrl+Space: trigger quick explain and suppress the Space key so it
+        // does not reach the active application (e.g. insert a space or open
+        // autocomplete in the host editor).
+        let cb = GLOBAL_ON_QUICK_EXPLAIN.lock().unwrap();
+        if let Some(ref callback) = *cb {
+            callback();
+        }
+        return LRESULT(1);
     }
 
     unsafe { CallNextHookEx(None, code, w_param, l_param) }

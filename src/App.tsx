@@ -100,6 +100,8 @@ type OverlayVisibilityPayload =
       window_x: number | null;
       window_y: number | null;
       screen_bottom_y: number | null;
+      /** When true the backend wants to immediately explain the selected text. */
+      auto_explain?: boolean;
     }
   | { state: 'hide-request' };
 type OverlayState = 'visible' | 'hidden' | 'hiding' | 'minibar';
@@ -225,6 +227,12 @@ function App() {
    * detect a mid-flight cancellation and skip the ask() call.
    */
   const screenCapturePendingRef = useRef(false);
+  /**
+   * Stores the selected text that should be auto-explained after the overlay
+   * becomes visible (set by Ctrl+Space quick-explain activation).
+   * Cleared immediately after ask() fires to prevent double-submit.
+   */
+  const autoExplainPendingRef = useRef<string | null>(null);
   /**
    * Stores the input state (query + context) captured just before a /screen
    * submit clears them. Used by handleCancel to restore the ask bar if the
@@ -484,6 +492,7 @@ function App() {
       windowX: number | null,
       windowY: number | null,
       screenBottomY: number | null,
+      autoExplain: boolean = false,
     ) => {
       const shouldGrowUp =
         windowY !== null &&
@@ -512,6 +521,10 @@ function App() {
       setIsSubmitPending(false);
       setPendingUserMessage(null);
       setCaptureError(null);
+
+      if (autoExplain && context) {
+        autoExplainPendingRef.current = context;
+      }
 
       reset();
       resetHistory();
@@ -1333,6 +1346,25 @@ function App() {
     modelSelection.capabilities,
   ]);
 
+  // Fire an automatic "explain this" query when the overlay becomes visible
+  // after a Ctrl+Space quick-explain activation. autoExplainPendingRef is set
+  // inside replayEntranceAnimation when the backend sends auto_explain=true.
+  /* eslint-disable @eslint-react/set-state-in-effect -- intentional: clears
+     selectedContext in the same tick as calling ask() to keep state coherent. */
+  useEffect(() => {
+    if (overlayState !== 'visible') return;
+    const text = autoExplainPendingRef.current;
+    if (!text) return;
+    autoExplainPendingRef.current = null;
+    // eslint-disable-next-line no-control-regex
+    const CONTROL_CHARS = /[\x00-\x08\x0b\x0c\x0e-\x1f]/g;
+    const sanitized = text.replace(CONTROL_CHARS, '').slice(0, quote.maxContextLength);
+    if (!sanitized.trim()) return;
+    ask('What is this, and what is it about?', sanitized);
+    setSelectedContext(null);
+  }, [overlayState, ask, quote.maxContextLength, setSelectedContext]);
+  /* eslint-enable @eslint-react/set-state-in-effect */
+
   // When a pending submit exists and all images finish processing, fire it.
   // Reads `attachedImages` directly (not via `executeSubmit` closure) to
   // guarantee the effect always sees the freshest file paths.
@@ -1447,6 +1479,7 @@ function App() {
               payload.window_x ?? null,
               payload.window_y ?? null,
               payload.screen_bottom_y ?? null,
+              payload.auto_explain ?? false,
             );
             return;
           }
