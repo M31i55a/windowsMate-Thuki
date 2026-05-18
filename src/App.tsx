@@ -48,6 +48,7 @@ const DEFAULT_MODEL_FALLBACK = 'gemini-3-flash-preview';
 
 const OVERLAY_VISIBILITY_EVENT = 'mate://visibility';
 const ONBOARDING_EVENT = 'mate://onboarding';
+/** Event emitted by Rust when a tray "Select Region" capture completes. Payload is the saved image file path. */
 
 /**
  * Authoritative deadline from the start of the hide transition to the native
@@ -940,6 +941,30 @@ function App() {
     if (attachedImages.length >= MAX_IMAGES) return;
     /* v8 ignore stop */
     const filePath = await invoke<string>('capture_full_screen_command');
+    if (!filePath) return;
+    const assetUrl = convertFileSrc(filePath);
+    setAttachedImages((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        blobUrl: assetUrl,
+        filePath,
+      },
+    ]);
+  }, [attachedImages]);
+
+  /**
+   * Invokes the interactive region-select command. Hides the overlay,
+   * shows a full-screen crosshair selector, crops the chosen rectangle,
+   * and attaches the result as an image — identical to handleScreenshot
+   * except the user draws the region instead of capturing everything.
+   * Returns without action if the user cancels (Escape / right-click).
+   */
+  const handleRegionCapture = useCallback(async () => {
+    /* v8 ignore start -- defensive guard: button is always disabled at max images, so this branch is unreachable through normal UI interaction */
+    if (attachedImages.length >= MAX_IMAGES) return;
+    /* v8 ignore stop */
+    const filePath = await invoke<string | null>('capture_screenshot_command');
     if (!filePath) return;
     const assetUrl = convertFileSrc(filePath);
     setAttachedImages((prev) => [
@@ -1898,6 +1923,7 @@ function App() {
                   onImageRemove={handleImageRemove}
                   onImagePreview={handleAskBarImagePreview}
                   onScreenshot={handleScreenshot}
+                  onRegionCapture={handleRegionCapture}
                   isDragOver={isDragOver ?? undefined}
                   onModelPickerToggle={handleModelPickerToggle}
                   isModelPickerOpen={isModelPickerOpen}

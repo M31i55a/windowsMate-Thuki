@@ -1,8 +1,3 @@
-
-
-
-
-
 <h1 align="center">
   Mate — Windows AI Assistant
 </h1>
@@ -100,18 +95,18 @@ Most AI tools require accounts, API keys, or subscriptions that bill you per tok
 
 This port adds several Windows-native improvements on top of the original Thuki:
 
-| Feature                      | Details                                                                                                                      |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| **Native Windows title bar** | Minimize button with Windows-style controls alongside macOS-style traffic-light dots                                         |
-| **Chat bubble color picker** | Choose any accent color; scrollbar tint and highlights update in real time                                                   |
-| **Adjustable transparency**  | Slide window background opacity from 50% to 100% in the Appearance settings tab                                              |
-| **Chat background blur**     | Tune the frosted-glass blur (0–20 px) behind the chat area in the Appearance settings tab                                    |
-| **Online model support**     | Connect OpenRouter, Anthropic, or OpenAI with your own key; switch between local and online in the model picker              |
-| **Agent mode (`/do`)**       | Autonomous desktop control — launches apps, types text, presses keys; cloud providers ask consent before sending screenshots |
-| **Edge TTS voice output**    | Read any assistant message aloud; choose from Neural voices in Settings → Sound                                              |
-| **Gateway API server**       | Expose Mate's backend as a local OpenAI-compatible HTTP endpoint for third-party tools                                       |
-| **Narrower chrome**          | Tighter padding on the overlay and chat area for a denser, more focused layout                                               |
-| **Header model chip**        | Active model displayed as a compact chip in the chat header — click to switch without leaving chat                           |
+| Feature                        | Details                                                                                                                       |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| **Native Windows title bar**   | Minimize button with Windows-style controls alongside macOS-style traffic-light dots                                          |
+| **Chat bubble color picker**   | Choose any accent color; scrollbar tint and highlights update in real time                                                    |
+| **Adjustable transparency**    | Slide window background opacity from 50% to 100% in the Appearance settings tab                                               |
+| **Chat background blur**       | Tune the frosted-glass blur (0–20 px) behind the chat area in the Appearance settings tab                                     |
+| **Online model support**       | Connect OpenRouter, Anthropic, or OpenAI with your own key; switch between local and online in the model picker               |
+| **Agent mode (`/do`)**         | Autonomous desktop control — launches apps, types text, presses keys; cloud providers ask consent before sending screenshots  |
+| **Edge TTS voice output**      | Read any assistant message aloud; choose from Neural voices in Settings → Sound                                               |
+| **Gateway API server**         | Expose Mate's backend as a local OpenAI-compatible HTTP endpoint for third-party tools                                        |
+| **Narrower chrome**            | Tighter padding on the overlay and chat area for a denser, more focused layout                                                |
+| **Header model chip**          | Active model displayed as a compact chip in the chat header — click to switch without leaving chat                            |
 | **Quick Explain (Ctrl+Space)** | Select text anywhere, press <kbd>Ctrl</kbd>+<kbd>Space</kbd> — Mate opens and auto-submits an explain query for the selection |
 
 ## Getting Started

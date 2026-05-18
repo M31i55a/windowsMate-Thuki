@@ -11,18 +11,19 @@ use tauri::Manager;
 use windows::core::BOOL;
 use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateSolidBrush, DeleteDC,
-    DeleteObject, EndPaint, FillRect, GetBitmapBits, GetDC, InvalidateRect, ReleaseDC,
-    SelectObject, PAINTSTRUCT, SRCCOPY,
+    AlphaBlend, BeginPaint, BI_RGB, BitBlt, BLENDFUNCTION, BITMAPINFO, BITMAPINFOHEADER,
+    CreateCompatibleBitmap, CreateCompatibleDC, CreateSolidBrush, DeleteDC, DeleteObject,
+    DIB_RGB_COLORS, EndPaint, FillRect, GetBitmapBits, GetDC, HBITMAP, InvalidateRect,
+    ReleaseDC, RGBQUAD, SelectObject, SetDIBits, PAINTSTRUCT, SRCCOPY,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetCursorPos, GetMessageW,
-    GetSystemMetrics, LoadCursorW, RegisterClassExW, SetLayeredWindowAttributes, ShowWindow,
-    TranslateMessage, IDC_CROSS, LWA_ALPHA, MSG, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
+    GetSystemMetrics, LoadCursorW, RegisterClassExW, SetForegroundWindow, ShowWindow,
+    TranslateMessage, IDC_CROSS, MSG, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
     SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE, WM_ERASEBKGND,
     WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_PAINT, WM_RBUTTONDOWN, WNDCLASSEXW,
-    WS_EX_LAYERED, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP, WS_VISIBLE,
+    WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
 };
 
 // ─── Full-screen capture (all monitors) ──────────────────────────────────────
@@ -141,6 +142,14 @@ fn get_selection_state() -> Option<Arc<Mutex<RegionSelectionState>>> {
     SELECTION_STATE.lock().unwrap().clone()
 }
 
+/// Raw `HBITMAP` handle (stored as `isize`) for the screenshot captured before the
+/// selection overlay is shown. WM_PAINT reads this to render the screenshot background,
+/// giving the user a clear view of what they are selecting.
+///
+/// `isize` is `Send + Sync`, so no unsafe impl is required.
+static SCREENSHOT_BITMAP: std::sync::LazyLock<Mutex<Option<isize>>> =
+    std::sync::LazyLock::new(|| Mutex::new(None));
+
 /// Window procedure for the region selection overlay.
 ///
 /// Draws a dark tint over the entire virtual screen, and a bright
@@ -222,83 +231,105 @@ unsafe extern "system" fn region_selection_wndproc(
                 let vw = GetSystemMetrics(SM_CXVIRTUALSCREEN);
                 let vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
 
-                // Dark overlay over entire virtual screen.
-                let full_rect = RECT {
-                    left: vx,
-                    top: vy,
-                    right: vx + vw,
-                    bottom: vy + vh,
-                };
-                let dark_brush = CreateSolidBrush(COLORREF(0));
-                let _ = FillRect(hdc, &full_rect, dark_brush);
-                let _ = DeleteObject(dark_brush.into());
+                // Draw the pre-capture screenshot so the user sees the real
+                // screen content under the selection overlay.
+                {
+                    let guard = SCREENSHOT_BITMAP.lock().unwrap();
+                    if let Some(handle_val) = *guard {
+                    let hbmp = HBITMAP(handle_val as *mut _);
+                        let mem_dc = CreateCompatibleDC(Some(hdc));
+                        let old = SelectObject(mem_dc, hbmp.into());
+                        let _ = BitBlt(hdc, vx, vy, vw, vh, Some(mem_dc), 0, 0, SRCCOPY);
+                        SelectObject(mem_dc, old);
+                        let _ = DeleteDC(mem_dc);
+                    }
+                }
 
-                // If selecting, draw the selection rectangle.
-                if let Some(state) = get_selection_state() {
+                // Determine selection bounds.
+                let (has_sel, x1, y1, x2, y2) = if let Some(state) = get_selection_state() {
                     let s = state.lock().unwrap();
                     let x1 = s.start_x.min(s.end_x);
                     let y1 = s.start_y.min(s.end_y);
                     let x2 = s.start_x.max(s.end_x);
                     let y2 = s.start_y.max(s.end_y);
-                    drop(s);
+                    (x2 > x1 && y2 > y1, x1, y1, x2, y2)
+                } else {
+                    (false, 0, 0, 0, 0)
+                };
 
-                    if x2 > x1 && y2 > y1 {
-                        // Clear/bright area for the selection.
-                        let sel_rect = RECT {
-                            left: x1,
-                            top: y1,
-                            right: x2,
-                            bottom: y2,
-                        };
-                        let clear_brush = CreateSolidBrush(COLORREF(0x00FFFFFF));
-                        let _ = FillRect(hdc, &sel_rect, clear_brush);
-                        let _ = DeleteObject(clear_brush.into());
-
-                        // Blue accent border (2px).
-                        let blue = CreateSolidBrush(COLORREF(0x00D77800));
-                        let _ = FillRect(
-                            hdc,
-                            &RECT {
-                                left: x1,
-                                top: y1,
-                                right: x2,
-                                bottom: y1 + 2,
-                            },
-                            blue,
+                // Semi-transparent dark veil over non-selected areas.
+                // We AlphaBlend a 1x1 black bitmap stretched to each region.
+                let overlay_dc = CreateCompatibleDC(Some(hdc));
+                let overlay_bmp = CreateCompatibleBitmap(hdc, 1, 1);
+                let old_bmp = SelectObject(overlay_dc, overlay_bmp.into());
+                let black = CreateSolidBrush(COLORREF(0));
+                let _ = FillRect(overlay_dc, &RECT { left: 0, top: 0, right: 1, bottom: 1 }, black);
+                let _ = DeleteObject(black.into());
+                let blend = BLENDFUNCTION {
+                    BlendOp: 0,             // AC_SRC_OVER
+                    BlendFlags: 0,
+                    SourceConstantAlpha: 160, // ~63% dark veil
+                    AlphaFormat: 0,
+                };
+                let bot = vy + vh;
+                let right = vx + vw;
+                if has_sel {
+                    // Veil: 4 rectangles surrounding the clear selection area.
+                    if y1 > vy {
+                        let _ = AlphaBlend(
+                            hdc, vx, vy, vw, y1 - vy,
+                            overlay_dc, 0, 0, 1, 1, blend,
                         );
-                        let _ = FillRect(
-                            hdc,
-                            &RECT {
-                                left: x1,
-                                top: y2 - 2,
-                                right: x2,
-                                bottom: y2,
-                            },
-                            blue,
-                        );
-                        let _ = FillRect(
-                            hdc,
-                            &RECT {
-                                left: x1,
-                                top: y1,
-                                right: x1 + 2,
-                                bottom: y2,
-                            },
-                            blue,
-                        );
-                        let _ = FillRect(
-                            hdc,
-                            &RECT {
-                                left: x2 - 2,
-                                top: y1,
-                                right: x2,
-                                bottom: y2,
-                            },
-                            blue,
-                        );
-                        let _ = DeleteObject(blue.into());
                     }
+                    if y2 < bot {
+                        let _ = AlphaBlend(
+                            hdc, vx, y2, vw, bot - y2,
+                            overlay_dc, 0, 0, 1, 1, blend,
+                        );
+                    }
+                    if x1 > vx {
+                        let _ = AlphaBlend(
+                            hdc, vx, y1, x1 - vx, y2 - y1,
+                            overlay_dc, 0, 0, 1, 1, blend,
+                        );
+                    }
+                    if x2 < right {
+                        let _ = AlphaBlend(
+                            hdc, x2, y1, right - x2, y2 - y1,
+                            overlay_dc, 0, 0, 1, 1, blend,
+                        );
+                    }
+                    // White selection border (2 px).
+                    let border = CreateSolidBrush(COLORREF(0x00FFFFFF));
+                    let _ = FillRect(
+                        hdc,
+                        &RECT { left: x1, top: y1, right: x2, bottom: y1 + 2 },
+                        border,
+                    );
+                    let _ = FillRect(
+                        hdc,
+                        &RECT { left: x1, top: y2 - 2, right: x2, bottom: y2 },
+                        border,
+                    );
+                    let _ = FillRect(
+                        hdc,
+                        &RECT { left: x1, top: y1, right: x1 + 2, bottom: y2 },
+                        border,
+                    );
+                    let _ = FillRect(
+                        hdc,
+                        &RECT { left: x2 - 2, top: y1, right: x2, bottom: y2 },
+                        border,
+                    );
+                    let _ = DeleteObject(border.into());
+                } else {
+                    // No selection yet — veil covers entire screen.
+                    let _ = AlphaBlend(hdc, vx, vy, vw, vh, overlay_dc, 0, 0, 1, 1, blend);
                 }
+                SelectObject(overlay_dc, old_bmp);
+                let _ = DeleteObject(overlay_bmp.into());
+                let _ = DeleteDC(overlay_dc);
+
                 let _ = EndPaint(hwnd, &ps);
             }
             LRESULT(0)
@@ -339,6 +370,44 @@ pub async fn capture_screenshot_command(
         .map_err(|e| format!("capture task failed: {e}"))??;
 
     let (vx, vy, full_width, full_height, full_rgba) = capture_result;
+
+    // Build a GDI HBITMAP from the RGBA capture so WM_PAINT can show the
+    // original screenshot behind the dark selection veil.
+    unsafe {
+        let mut bgra = full_rgba.clone();
+        for chunk in bgra.chunks_exact_mut(4) {
+            chunk.swap(0, 2); // RGBA → BGRA (Windows GDI byte order)
+        }
+        let screen_dc = GetDC(None);
+        let hbmp = CreateCompatibleBitmap(screen_dc, full_width as i32, full_height as i32);
+        let bmi = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: full_width as i32,
+                biHeight: -(full_height as i32), // negative = top-down
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB.0,
+                biSizeImage: 0,
+                biXPelsPerMeter: 0,
+                biYPelsPerMeter: 0,
+                biClrUsed: 0,
+                biClrImportant: 0,
+            },
+            bmiColors: [RGBQUAD::default()],
+        };
+        let _ = SetDIBits(
+            Some(screen_dc),
+            hbmp,
+            0,
+            full_height,
+            bgra.as_ptr() as *const _,
+            &bmi,
+            DIB_RGB_COLORS,
+        );
+        let _ = ReleaseDC(None, screen_dc);
+        *SCREENSHOT_BITMAP.lock().unwrap() = Some(hbmp.0 as isize);
+    }
 
     // Create and run the region selection overlay on the main thread.
     let state = Arc::new(Mutex::new(RegionSelectionState {
@@ -387,7 +456,7 @@ pub async fn capture_screenshot_command(
 
         let hwnd = unsafe {
             CreateWindowExW(
-                WINDOW_EX_STYLE(WS_EX_TOPMOST.0 | WS_EX_LAYERED.0 | WS_EX_TRANSPARENT.0),
+                WINDOW_EX_STYLE(WS_EX_TOPMOST.0), // no LAYERED/TRANSPARENT — we need mouse input
                 PCWSTR(class_name.as_ptr()),
                 PCWSTR(window_title.as_ptr()),
                 WINDOW_STYLE(WS_POPUP.0 | WS_VISIBLE.0),
@@ -404,11 +473,11 @@ pub async fn capture_screenshot_command(
 
         match hwnd {
             Ok(h) => {
-                // Semi-transparent overlay so user can see the screen underneath.
                 unsafe {
-                    let _ = SetLayeredWindowAttributes(h, COLORREF(0), 120, LWA_ALPHA);
                     let _ = ShowWindow(h, SW_SHOW);
                     let _ = windows::Win32::Graphics::Gdi::UpdateWindow(h);
+                    // Bring window to front and give it keyboard focus so Escape works.
+                    let _ = SetForegroundWindow(h);
                 }
 
                 // Message loop — blocks until selection is complete or cancelled.
@@ -440,6 +509,11 @@ pub async fn capture_screenshot_command(
 
         clear_selection_state();
     });
+
+    // Release the GDI screenshot bitmap now that the overlay is closed.
+    if let Some(handle_val) = SCREENSHOT_BITMAP.lock().unwrap().take() {
+        unsafe { let _ = DeleteObject(HBITMAP(handle_val as *mut _).into()); }
+    }
 
     // Re-show the main window.
     let show_handle = app_handle.clone();

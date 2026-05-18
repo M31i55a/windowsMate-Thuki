@@ -121,6 +121,32 @@ const HISTORY_ICON = (
   </svg>
 );
 
+/** Hoisted static region-select icon — triggers interactive region capture. */
+const REGION_ICON = (
+  <svg
+    width="14"
+    height="14"
+    viewBox="0 0 16 16"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden="true"
+  >
+    {/* dashed selection rectangle */}
+    <rect
+      x="2"
+      y="2"
+      width="12"
+      height="12"
+      rx="1"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeDasharray="3 2"
+    />
+    {/* crosshair dot in center */}
+    <circle cx="8" cy="8" r="1.25" fill="currentColor" />
+  </svg>
+);
+
 /** Hoisted static camera icon — triggers screenshot capture. */
 const CAMERA_ICON = (
   <svg
@@ -234,6 +260,8 @@ interface AskBarViewProps {
   onImagePreview: (id: string) => void;
   /** Called when the user clicks the screenshot capture button. */
   onScreenshot: () => void;
+  /** Called when the user clicks the region-select button. */
+  onRegionCapture: () => void;
   /**
    * Drag state passed down from the root window handler.
    * "normal" = violet ring; "max" = red ring + label; undefined = no ring.
@@ -273,6 +301,7 @@ export function AskBarView({
   onImageRemove,
   onImagePreview,
   onScreenshot,
+  onRegionCapture,
   isDragOver,
   onModelPickerToggle,
   isModelPickerOpen = false,
@@ -690,6 +719,32 @@ export function AskBarView({
                 className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-text-primary hover:bg-white/8 transition-colors duration-150 disabled:opacity-40 disabled:cursor-default cursor-pointer"
               >
                 {CAMERA_ICON}
+              </button>
+            </Tooltip>
+          )}
+
+          {isAtMaxImages ? (
+            <Tooltip label="Maximum 3 images attached">
+              <button
+                type="button"
+                onClick={onRegionCapture}
+                disabled
+                aria-label="Select screen region"
+                className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary transition-colors duration-150 disabled:opacity-40 disabled:cursor-default cursor-pointer"
+              >
+                {REGION_ICON}
+              </button>
+            </Tooltip>
+          ) : (
+            <Tooltip label="Select a screen region">
+              <button
+                type="button"
+                onClick={onRegionCapture}
+                disabled={isBusy}
+                aria-label="Select screen region"
+                className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-text-primary hover:bg-white/8 transition-colors duration-150 disabled:opacity-40 disabled:cursor-default cursor-pointer"
+              >
+                {REGION_ICON}
               </button>
             </Tooltip>
           )}

@@ -5,7 +5,7 @@
 //! - Context capture (clipboard fallback for selected text)
 //! - Permission stubs (Windows has no TCC equivalent)
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
@@ -37,6 +37,8 @@ const VK_LCONTROL: i32 = 0xA2;
 const VK_RCONTROL: i32 = 0xA3;
 /// Virtual key code for the Space bar.
 const VK_SPACE: i32 = 0x20;
+/// Time window within which a second Ctrl+Space counts as Ctrl+Space+Space.
+const DOUBLE_SPACE_WINDOW: Duration = Duration::from_millis(350);
 
 // ─── Global Hook State ─────────────────────────────────────────────────────────
 
@@ -64,6 +66,22 @@ type QuickExplainCallback = Arc<dyn Fn() + Send + Sync>;
 #[allow(clippy::type_complexity)]
 static GLOBAL_ON_QUICK_EXPLAIN: LazyLock<Mutex<Option<QuickExplainCallback>>> =
     LazyLock::new(|| Mutex::new(None));
+
+type QuoteFillCallback = Arc<dyn Fn() + Send + Sync>;
+
+#[allow(clippy::type_complexity)]
+static GLOBAL_ON_QUOTE_FILL: LazyLock<Mutex<Option<QuoteFillCallback>>> =
+    LazyLock::new(|| Mutex::new(None));
+
+/// Timestamp of the most recent Ctrl+Space press. Used to detect a double-tap
+/// (Ctrl+Space+Space) within DOUBLE_SPACE_WINDOW.
+static LAST_CTRL_SPACE_INSTANT: LazyLock<Mutex<Option<Instant>>> =
+    LazyLock::new(|| Mutex::new(None));
+
+/// Generation counter incremented on every Ctrl+Space press. A deferred
+/// auto-explain thread compares its snapshot against the current value; if
+/// they differ a second Space arrived in time and the thread bails out.
+static CTRL_SPACE_PENDING_GEN: AtomicU64 = AtomicU64::new(0);
 
 // ─── Activation Logic ──────────────────────────────────────────────────────────
 
@@ -134,10 +152,11 @@ impl OverlayActivator {
         });
     }
 
-    /// Registers the callback invoked when the user presses Ctrl+Space.
+    /// Registers the callback invoked when the user presses Ctrl+Space (single).
     ///
-    /// The callback is called from the low-level keyboard hook thread, so it
-    /// must be `Send + Sync` and should not block for long.
+    /// The callback fires after DOUBLE_SPACE_WINDOW elapses with no second Space,
+    /// so the double-tap (Ctrl+Space+Space) can still preempt it.
+    /// The callback runs on a background thread; do not block for long.
     #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn set_quick_explain<F>(&self, callback: F)
     where
@@ -146,13 +165,27 @@ impl OverlayActivator {
         let mut cb = GLOBAL_ON_QUICK_EXPLAIN.lock().unwrap();
         *cb = Some(Arc::new(callback));
     }
+
+    /// Registers the callback invoked when the user presses Ctrl+Space+Space.
+    ///
+    /// The overlay opens with the captured text pre-filled as a context quote
+    /// but does NOT auto-submit — the user types their own question.
+    /// The callback runs on the hook thread; do not block for long.
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    pub fn set_quote_fill<F>(&self, callback: F)
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        let mut cb = GLOBAL_ON_QUOTE_FILL.lock().unwrap();
+        *cb = Some(Arc::new(callback));
+    }
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn run_hook_loop(is_active: Arc<AtomicBool>) {
     GLOBAL_HOOK_ACTIVE.store(true, Ordering::SeqCst);
 
-    let hook = unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook_callback), None, 0) };
+    let hook: Result<windows::Win32::UI::WindowsAndMessaging::HHOOK, windows::core::Error> = unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook_callback), None, 0) };
 
     match hook {
         Ok(hook_handle) => {
@@ -222,12 +255,42 @@ unsafe extern "system" fn keyboard_hook_callback(
             }
         }
     } else if vk_code == VK_SPACE && is_press && CTRL_HELD.load(Ordering::SeqCst) {
-        // Ctrl+Space: trigger quick explain and suppress the Space key so it
-        // does not reach the active application (e.g. insert a space or open
-        // autocomplete in the host editor).
-        let cb = GLOBAL_ON_QUICK_EXPLAIN.lock().unwrap();
-        if let Some(ref callback) = *cb {
-            callback();
+        // Ctrl+Space / Ctrl+Space+Space:
+        // - Single Space (no second within DOUBLE_SPACE_WINDOW) → auto-explain
+        //   (fires automatically after the window elapses).
+        // - Double Space (second within DOUBLE_SPACE_WINDOW) → quote-fill only;
+        //   the user types their own question.
+        // In both cases the Space keystroke is suppressed.
+        let now = Instant::now();
+        let is_double = {
+            let mut last = LAST_CTRL_SPACE_INSTANT.lock().unwrap();
+            let double = last
+                .map(|t| now.duration_since(t) < DOUBLE_SPACE_WINDOW)
+                .unwrap_or(false);
+            *last = Some(now);
+            double
+        };
+
+        if is_double {
+            // Invalidate the pending auto-explain spawned on the first press.
+            CTRL_SPACE_PENDING_GEN.fetch_add(1, Ordering::SeqCst);
+            let cb = GLOBAL_ON_QUOTE_FILL.lock().unwrap().clone();
+            if let Some(ref callback) = cb {
+                callback();
+            }
+        } else {
+            // First press — defer the auto-explain so a rapid second Space can
+            // still intercept and switch to quote-fill mode.
+            let gen = CTRL_SPACE_PENDING_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+            let cb = GLOBAL_ON_QUICK_EXPLAIN.lock().unwrap().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(DOUBLE_SPACE_WINDOW);
+                if CTRL_SPACE_PENDING_GEN.load(Ordering::SeqCst) == gen {
+                    if let Some(ref callback) = cb {
+                        callback();
+                    }
+                }
+            });
         }
         return LRESULT(1);
     }
