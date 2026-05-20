@@ -395,8 +395,8 @@ Available actions (one per line, must be EXACTLY formatted):
 - SCROLL direction amount — Scroll "up" or "down" by amount (default unit is 3 lines)
 - LAUNCH target — Open a program, file, or URL
 - SCREENSHOT — Take another screenshot (for checking progress)
-- WINDOW_INFO — Get the title of the active foreground window
-- LIST_WINDOWS — List all visible top-level window titles
+- WINDOW_INFO — Get the title of the SINGLE currently active/focused window. Use this when asked what the active, current, or focused window is.
+- LIST_WINDOWS — Enumerate titles of ALL visible top-level windows. Use this only when asked which apps or windows are open.
 - READ_FOCUSED — Read the accessible name/value of the currently focused UI element
 - FIND_ACTIVATE element_name — Find and click a UI element by its accessible name
 - DONE summary — Task is complete, summarize what was accomplished
@@ -406,8 +406,10 @@ Important rules:
 2. You may include brief reasoning before the action line.
 3. Coordinates are in absolute screen pixels.
 4. Use SCREENSHOT when you need to verify a change before proceeding.
-5. Use DONE when the task is complete.
-6. Be precise with coordinates — examine the screenshot carefully."#;
+5. Use WINDOW_INFO (not LIST_WINDOWS) when asked about the current/active window title.
+6. For query actions (WINDOW_INFO, LIST_WINDOWS, READ_FOCUSED), you will receive the result back. Then respond with DONE <answer>.
+7. Use DONE when the task is complete.
+8. Be precise with coordinates — examine the screenshot carefully."#;
 
 /// Variant of AGENT_SYSTEM_PROMPT for text-only models that do not support
 /// vision input. Omits screen-analysis instructions and SCREENSHOT action
@@ -426,8 +428,8 @@ Available actions (one per line, must be EXACTLY formatted):
 - KEY_PRESS modifiers+key — Press key combo, e.g. "ctrl+c", "ctrl+shift+s"
 - SCROLL direction amount — Scroll "up" or "down" by amount (default unit is 3 lines)
 - LAUNCH target — Open a program, file, or URL
-- WINDOW_INFO — Get the title of the active foreground window
-- LIST_WINDOWS — List all visible top-level window titles
+- WINDOW_INFO — Get the title of the SINGLE currently active/focused window. Use this when asked what the active, current, or focused window is.
+- LIST_WINDOWS — Enumerate titles of ALL visible top-level windows. Use this only when asked which apps or windows are open.
 - READ_FOCUSED — Read the accessible name/value of the currently focused UI element
 - FIND_ACTIVATE element_name — Find and click a UI element by its accessible name
 - DONE summary — Task is complete, summarize what was accomplished
@@ -436,7 +438,9 @@ Important rules:
 1. Always provide exactly ONE action per response line starting with the action keyword.
 2. You may include brief reasoning before the action line.
 3. Use LAUNCH to open applications, files, or URLs by name (e.g. LAUNCH notepad, LAUNCH chrome).
-4. Use DONE when the task is complete."#;
+4. Use WINDOW_INFO (not LIST_WINDOWS) when asked about the current/active window title.
+5. For query actions (WINDOW_INFO, LIST_WINDOWS, READ_FOCUSED), you will receive the result back. Then respond with DONE <answer>.
+6. Use DONE when the task is complete."#;
 
 // ─── Iteration limits ───────────────────────────────────────────────────────────
 
@@ -872,10 +876,13 @@ async fn run_text_parse_loop(
 
     eprintln!("mate: [agent] model={model} has_vision={has_vision}");
 
-    // Hide the overlay so it doesn't appear in screenshots and cannot
-    // receive stray TYPE actions while the agent loop is running.
-    if let Some(w) = app_handle.get_webview_window("main") {
-        let _ = w.hide();
+    // Hide the overlay only for vision models — it must not appear in
+    // screenshots. Text-only models never screenshot, so keeping the
+    // overlay visible lets the user watch agent progress in real time.
+    if has_vision {
+        if let Some(w) = app_handle.get_webview_window("main") {
+            let _ = w.hide();
+        }
     }
 
     let mut conversation: Vec<serde_json::Value> = vec![
@@ -1006,6 +1013,7 @@ async fn run_text_parse_loop(
         );
 
         let mut actions_executed = 0u32;
+        let mut query_result_injected = false;
 
         for line in response.lines() {
             if state.is_cancelled() {
@@ -1055,6 +1063,11 @@ async fn run_text_parse_loop(
                 state.set_status(AgentStatus::Done);
                 let _ =
                     app_handle.emit("mate://agent", AgentEvent::StatusChanged(AgentStatus::Done));
+                // Re-show the overlay immediately so the user sees the result.
+                if let Some(w) = app_handle.get_webview_window("main") {
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
                 return Ok(());
             }
 
@@ -1129,15 +1142,44 @@ async fn run_text_parse_loop(
                 }
             } else {
                 actions_executed += 1;
+
+                // For window-query actions in text-only mode the overlay is still
+                // visible (we didn't hide it at loop start). Briefly hide it so
+                // the OS shifts focus to the previous window, giving accurate results.
+                let is_window_query = !has_vision
+                    && matches!(
+                        action,
+                        AgentAction::GetActiveWindowInfo {}
+                            | AgentAction::ListOpenWindows {}
+                            | AgentAction::ReadFocusedElement {}
+                    );
+                if is_window_query {
+                    if let Some(w) = app_handle.get_webview_window("main") {
+                        let _ = w.hide();
+                        // Give the OS time to focus the previous window.
+                        tokio::time::sleep(Duration::from_millis(300)).await;
+                    }
+                }
+
                 let action_result =
                     execute_action_with_result(&app_handle, &state, &action).await?;
+
+                // Restore the overlay after a window query.
+                if is_window_query {
+                    if let Some(w) = app_handle.get_webview_window("main") {
+                        let _ = w.show();
+                        let _ = w.set_focus();
+                    }
+                }
+
                 // For read-only query actions inject the result back so the model
-                // can reason about it on the next text-parse iteration.
+                // can reason about it and respond with DONE on the next iteration.
                 if action_result != "ok" && !action_result.is_empty() {
                     conversation.push(serde_json::json!({
                         "role": "user",
-                        "content": format!("Query result:\n{action_result}"),
+                        "content": format!("Query result:\n{action_result}\n\nRespond with DONE <answer> using this information."),
                     }));
+                    query_result_injected = true;
                 }
             }
 
@@ -1146,9 +1188,10 @@ async fn run_text_parse_loop(
 
         // For text-only models: inject a user feedback message so the model
         // knows its action was executed and must decide the next step.
-        // Vision models already get this feedback via the screenshot at the
-        // start of the next iteration.
-        if !has_vision && actions_executed > 0 {
+        // Skip when a query result was already injected — that message already
+        // contains the DONE instruction and a second prompt would confuse the model.
+        // Vision models get this feedback via the screenshot at the next iteration.
+        if !has_vision && actions_executed > 0 && !query_result_injected {
             conversation.push(serde_json::json!({
                 "role": "user",
                 "content": "Action executed. What is the next step to complete the task? If done, respond with DONE <summary>.",
@@ -1168,6 +1211,10 @@ async fn run_text_parse_loop(
             );
             state.set_status(AgentStatus::Done);
             let _ = app_handle.emit("mate://agent", AgentEvent::StatusChanged(AgentStatus::Done));
+            if let Some(w) = app_handle.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
             return Ok(());
         }
     }
@@ -1181,6 +1228,10 @@ async fn run_text_parse_loop(
     );
     state.set_status(AgentStatus::Done);
     let _ = app_handle.emit("mate://agent", AgentEvent::StatusChanged(AgentStatus::Done));
+    if let Some(w) = app_handle.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
     Ok(())
 }
 
