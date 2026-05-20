@@ -1941,8 +1941,9 @@ mod tests {
     fn confirmation_state_learning() {
         let cs = ConfirmationState::new();
         let click = AgentAction::Click { x: 100, y: 200 };
-        // First 3 actions need confirmation.
-        assert!(cs.requires_confirmation(&click));
+        // LEARNING_CONFIRMATION_LIMIT = 0 means no learning period;
+        // non-dangerous actions auto-execute without confirmation from the start.
+        assert!(!cs.requires_confirmation(&click));
     }
 
     #[test]
