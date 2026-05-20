@@ -39,7 +39,7 @@ Mate (based on Thuki — Vietnamese _thư kí_ for secretary) is a lightweight W
 
 ### Basic Usage
 
-Double-tap Control <kbd>Ctrl</kbd> to summon Mate from anywhere. Ask a question, get an answer, and dismiss. Use `/screen` or the screenshot button to capture your screen and attach it as context.
+Double-tap Control <kbd>Ctrl</kbd> to summon Mate from anywhere. Ask a question, get an answer, and dismiss. Use `/screen` or the camera button to capture your full screen, or click the crosshair (region-select) button to drag and crop any area of your screen — the captured image is attached automatically as context.
 
 [https://github.com/user-attachments/assets/57df0efe-24eb-4875-a83d-e605e0c6f8b4](https://github.com/user-attachments/assets/6a03da1b-4a1b-4c45-b251-19bcaba995b0)
 
@@ -75,7 +75,8 @@ Most AI tools require accounts, API keys, or subscriptions that bill you per tok
 - **Online models:** connect OpenRouter (or Anthropic / OpenAI directly) with your own API key for cloud-powered responses — one toggle in the model picker switches between local and online mode
 - **Isolated sandbox:** optionally run models in a hardened Docker container with capability dropping, read-only volumes, and localhost-only networking
 - **Image input:** paste or drag images and screenshots directly into the chat
-- **Screen capture:** type `/screen` to instantly capture your entire screen and attach it to your question as context
+- **Screen capture:** type `/screen` or click the camera button to instantly capture your entire screen and attach it to your question as context
+- **Region capture:** click the crosshair button in the ask bar to open a fullscreen drag-to-select overlay — draw a rectangle over any part of your screen and the cropped region is attached as context
 - **Agent mode:** type `/do` to let Mate autonomously control your desktop — launch apps, type text, press key combos, and complete multi-step tasks. Works with both vision and text-only local models; cloud providers ask for screenshot consent before sending any screen data off-device
 - **Agentic search:** type `/search` to run a fully local, multi-step search pipeline (SearXNG + Trafilatura reader) with a live trace of every query, fetch, and judgement step
 - **Slash commands:** built-in commands for live search and prompt shortcuts: `/do`, `/search`, `/screen`, `/think`, `/translate`, `/rewrite`, `/tldr`, `/refine`, `/bullets`, `/todos`. Highlight text anywhere, summon Mate, type a command, and hit Enter
@@ -95,19 +96,20 @@ Most AI tools require accounts, API keys, or subscriptions that bill you per tok
 
 This port adds several Windows-native improvements on top of the original Thuki:
 
-| Feature                        | Details                                                                                                                       |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| **Native Windows title bar**   | Minimize button with Windows-style controls alongside macOS-style traffic-light dots                                          |
-| **Chat bubble color picker**   | Choose any accent color; scrollbar tint and highlights update in real time                                                    |
-| **Adjustable transparency**    | Slide window background opacity from 50% to 100% in the Appearance settings tab                                               |
-| **Chat background blur**       | Tune the frosted-glass blur (0–20 px) behind the chat area in the Appearance settings tab                                     |
-| **Online model support**       | Connect OpenRouter, Anthropic, or OpenAI with your own key; switch between local and online in the model picker               |
-| **Agent mode (`/do`)**         | Autonomous desktop control — launches apps, types text, presses keys; cloud providers ask consent before sending screenshots  |
-| **Edge TTS voice output**      | Read any assistant message aloud; choose from Neural voices in Settings → Sound                                               |
-| **Gateway API server**         | Expose Mate's backend as a local OpenAI-compatible HTTP endpoint for third-party tools                                        |
-| **Narrower chrome**            | Tighter padding on the overlay and chat area for a denser, more focused layout                                                |
-| **Header model chip**          | Active model displayed as a compact chip in the chat header — click to switch without leaving chat                            |
-| **Quick Explain (Ctrl+Space)** | Select text anywhere, press <kbd>Ctrl</kbd>+<kbd>Space</kbd> — Mate opens and auto-submits an explain query for the selection |
+| Feature                           | Details                                                                                                                                                                                                                                                                                                  |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Native Windows title bar**      | Minimize button with Windows-style controls alongside macOS-style traffic-light dots                                                                                                                                                                                                                     |
+| **Chat bubble color picker**      | Choose any accent color; scrollbar tint and highlights update in real time                                                                                                                                                                                                                               |
+| **Adjustable transparency**       | Slide window background opacity from 50% to 100% in the Appearance settings tab                                                                                                                                                                                                                          |
+| **Chat background blur**          | Tune the frosted-glass blur (0–20 px) behind the chat area in the Appearance settings tab                                                                                                                                                                                                                |
+| **Online model support**          | Connect OpenRouter, Anthropic, or OpenAI with your own key; switch between local and online in the model picker                                                                                                                                                                                          |
+| **Agent mode (`/do`)**            | Autonomous desktop control — launches apps, types text, presses keys; cloud providers ask consent before sending screenshots                                                                                                                                                                             |
+| **Edge TTS voice output**         | Read any assistant message aloud; choose from Neural voices in Settings → Sound                                                                                                                                                                                                                          |
+| **Gateway API server**            | Expose Mate's backend as a local OpenAI-compatible HTTP endpoint for third-party tools                                                                                                                                                                                                                   |
+| **Narrower chrome**               | Tighter padding on the overlay and chat area for a denser, more focused layout                                                                                                                                                                                                                           |
+| **Header model chip**             | Active model displayed as a compact chip in the chat header — click to switch without leaving chat                                                                                                                                                                                                       |
+| **Quick Explain (Ctrl+Space)**    | Select text anywhere, press <kbd>Ctrl</kbd>+<kbd>Space</kbd> — Mate opens and auto-submits an explain query for the selection                                                                                                                                                                            |
+| **Drag-to-select region capture** | Click the crosshair button in the ask bar; a fullscreen overlay opens with a crosshair cursor. Drag a rectangle over any screen area, release, and the cropped region is attached as context. Escape or right-click cancels. Works alongside `/screen` (full-screen capture) and manual image paste/drag |
 
 ## Getting Started
 
