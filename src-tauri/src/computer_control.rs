@@ -4,15 +4,26 @@
 //! and application launching for the agent mode loop.
 
 use serde::{Deserialize, Serialize};
+use windows::core::{Interface, BOOL, BSTR};
+use windows::Win32::Foundation::{HWND, LPARAM};
+use windows::Win32::System::Com::{
+    CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
+};
+use windows::Win32::UI::Accessibility::{
+    CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationTreeWalker,
+    IUIAutomationValuePattern, UIA_PATTERN_ID,
+};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_TYPE, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
-    KEYEVENTF_UNICODE, MOUSEINPUT, MOUSE_EVENT_FLAGS, VIRTUAL_KEY, VK_BACK, VK_CAPITAL,
-    VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_F1, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7,
-    VK_F8, VK_F9, VK_F10, VK_F11, VK_F12, VK_HOME, VK_INSERT, VK_LEFT, VK_LCONTROL, VK_LMENU,
-    VK_LSHIFT, VK_NEXT, VK_NUMLOCK, VK_PACKET, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_SNAPSHOT,
-    VK_SPACE, VK_TAB, VK_UP,
+    KEYEVENTF_UNICODE, MOUSEINPUT, MOUSE_EVENT_FLAGS, VIRTUAL_KEY, VK_BACK, VK_CAPITAL, VK_DELETE,
+    VK_DOWN, VK_END, VK_ESCAPE, VK_F1, VK_F10, VK_F11, VK_F12, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6,
+    VK_F7, VK_F8, VK_F9, VK_HOME, VK_INSERT, VK_LCONTROL, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_NEXT,
+    VK_NUMLOCK, VK_PACKET, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_SNAPSHOT, VK_SPACE, VK_TAB, VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::SetCursorPos;
+use windows::Win32::UI::WindowsAndMessaging::{
+    EnumWindows, GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW, IsWindowVisible,
+};
 
 // ─── Action types ───────────────────────────────────────────────────────────────
 
@@ -20,16 +31,53 @@ use windows::Win32::UI::WindowsAndMessaging::SetCursorPos;
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(tag = "type", content = "params")]
 pub enum AgentAction {
-    Click { x: i32, y: i32 },
-    DoubleClick { x: i32, y: i32 },
-    RightClick { x: i32, y: i32 },
-    Drag { start_x: i32, start_y: i32, end_x: i32, end_y: i32, duration_ms: u32 },
-    TypeText { text: String },
-    KeyPress { modifiers: Vec<String>, key: String },
-    Scroll { direction: String, amount: i32 },
-    Launch { target: String },
-    Done { summary: String },
+    Click {
+        x: i32,
+        y: i32,
+    },
+    DoubleClick {
+        x: i32,
+        y: i32,
+    },
+    RightClick {
+        x: i32,
+        y: i32,
+    },
+    Drag {
+        start_x: i32,
+        start_y: i32,
+        end_x: i32,
+        end_y: i32,
+        duration_ms: u32,
+    },
+    TypeText {
+        text: String,
+    },
+    KeyPress {
+        modifiers: Vec<String>,
+        key: String,
+    },
+    Scroll {
+        direction: String,
+        amount: i32,
+    },
+    Launch {
+        target: String,
+    },
+    Done {
+        summary: String,
+    },
     Screenshot {},
+    /// Read the title of the currently active (foreground) window.
+    GetActiveWindowInfo {},
+    /// List all visible top-level window titles.
+    ListOpenWindows {},
+    /// Read the accessible name and value of the currently focused UI element.
+    ReadFocusedElement {},
+    /// Find a UI element by its accessible name and click it.
+    FindAndActivate {
+        name: String,
+    },
 }
 
 /// Direction for scroll actions.
@@ -48,10 +96,7 @@ const WHEEL_DELTA: i32 = 120;
 /// Moves the cursor to absolute screen coordinates.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn set_cursor_pos(x: i32, y: i32) -> Result<(), String> {
-    unsafe {
-        SetCursorPos(x, y)
-            .map_err(|e| format!("SetCursorPos failed: {e}"))
-    }
+    unsafe { SetCursorPos(x, y).map_err(|e| format!("SetCursorPos failed: {e}")) }
 }
 
 /// Left-clicks at the given screen coordinates.
@@ -96,7 +141,13 @@ pub fn execute_right_click(x: i32, y: i32) -> Result<(), String> {
 
 /// Drags from (start_x, start_y) to (end_x, end_y) over the given duration.
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn execute_drag(start_x: i32, start_y: i32, end_x: i32, end_y: i32, duration_ms: u32) -> Result<(), String> {
+pub fn execute_drag(
+    start_x: i32,
+    start_y: i32,
+    end_x: i32,
+    end_y: i32,
+    duration_ms: u32,
+) -> Result<(), String> {
     set_cursor_pos(start_x, start_y)?;
     let down = mouse_input(MOUSEEVENTF_LEFTDOWN, 0, 0, 0);
     send_inputs(&[down]);
@@ -276,24 +327,190 @@ pub fn execute_launch(target: &str) -> Result<(), String> {
     Ok(())
 }
 
+// ─── UIA pattern IDs ────────────────────────────────────────────────────────────
+
+/// UIAutomation pattern ID for reading editable text values (IUIAutomationValuePattern).
+const UIA_VALUE_PATTERN_ID: UIA_PATTERN_ID = UIA_PATTERN_ID(10002);
+
+// ─── UIAutomation structured-read actions ───────────────────────────────────────
+
+/// Returns the title of the currently active foreground window.
+#[cfg_attr(coverage_nightly, coverage(off))]
+pub fn get_active_window_info() -> Result<String, String> {
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        let len = GetWindowTextLengthW(hwnd);
+        if len <= 0 {
+            return Ok("Active window: (no title)".to_string());
+        }
+        let mut buf = vec![0u16; (len + 1) as usize];
+        let copied = GetWindowTextW(hwnd, &mut buf);
+        let title = String::from_utf16_lossy(&buf[..copied.max(0) as usize]);
+        Ok(format!("Active window: {title}"))
+    }
+}
+
+/// Returns newline-separated titles of all visible top-level windows.
+#[cfg_attr(coverage_nightly, coverage(off))]
+pub fn list_open_windows() -> Result<String, String> {
+    let mut titles: Vec<String> = Vec::new();
+    unsafe {
+        let ptr = &mut titles as *mut Vec<String>;
+        let _ = EnumWindows(Some(enum_windows_callback), LPARAM(ptr as isize));
+    }
+    if titles.is_empty() {
+        Ok("No visible windows found".to_string())
+    } else {
+        Ok(titles.join("\n"))
+    }
+}
+
+unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    if !IsWindowVisible(hwnd).as_bool() {
+        return BOOL(1);
+    }
+    let len = GetWindowTextLengthW(hwnd);
+    if len <= 0 {
+        return BOOL(1);
+    }
+    let mut buf = vec![0u16; (len + 1) as usize];
+    let copied = GetWindowTextW(hwnd, &mut buf);
+    if copied > 0 {
+        let title = String::from_utf16_lossy(&buf[..copied as usize]);
+        if !title.trim().is_empty() {
+            let titles = &mut *(lparam.0 as *mut Vec<String>);
+            titles.push(title);
+        }
+    }
+    BOOL(1)
+}
+
+/// Returns the accessible name and current value of the focused UI element.
+#[cfg_attr(coverage_nightly, coverage(off))]
+pub fn read_focused_element() -> Result<String, String> {
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let automation: IUIAutomation =
+            CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER)
+                .map_err(|e| format!("IUIAutomation init failed: {e}"))?;
+        let element = automation
+            .GetFocusedElement()
+            .map_err(|e| format!("GetFocusedElement failed: {e}"))?;
+        let name = element
+            .CurrentName()
+            .map(|b| b.to_string())
+            .unwrap_or_default();
+        let value = element
+            .GetCurrentPattern(UIA_VALUE_PATTERN_ID)
+            .ok()
+            .and_then(|unk| unk.cast::<IUIAutomationValuePattern>().ok())
+            .and_then(|vp: IUIAutomationValuePattern| vp.CurrentValue().ok())
+            .map(|b: BSTR| b.to_string())
+            .unwrap_or_default();
+        if value.is_empty() {
+            Ok(format!("Focused element: {name}"))
+        } else {
+            Ok(format!("Focused element: {name}\nValue: {value}"))
+        }
+    }
+}
+
+/// Finds a UI element whose accessible name contains `name` and clicks its centre.
+/// Searches the foreground window's accessibility tree to a depth of 15 levels.
+#[cfg_attr(coverage_nightly, coverage(off))]
+pub fn find_and_activate(name: &str) -> Result<(), String> {
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let automation: IUIAutomation =
+            CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER)
+                .map_err(|e| format!("IUIAutomation init failed: {e}"))?;
+        let walker = automation
+            .ControlViewWalker()
+            .map_err(|e| format!("ControlViewWalker failed: {e}"))?;
+        let root = automation
+            .ElementFromHandle(GetForegroundWindow())
+            .or_else(|_| automation.GetRootElement())
+            .map_err(|e| format!("GetRootElement failed: {e}"))?;
+        walk_and_click(&walker, &root, name, 15)
+            .ok_or_else(|| format!("No element named '{name}' found in UI"))
+    }
+}
+
+/// Recursively searches the UIA tree for an element matching `name` and clicks it.
+/// Returns `Some(())` on success, `None` when nothing is found within `depth` levels.
+unsafe fn walk_and_click(
+    walker: &IUIAutomationTreeWalker,
+    element: &IUIAutomationElement,
+    name: &str,
+    depth: u32,
+) -> Option<()> {
+    if depth == 0 {
+        return None;
+    }
+    if let Ok(elem_name) = element.CurrentName() {
+        if elem_name
+            .to_string()
+            .to_lowercase()
+            .contains(&name.to_lowercase())
+        {
+            if let Ok(rect) = element.CurrentBoundingRectangle() {
+                let cx = (rect.left + rect.right) / 2;
+                let cy = (rect.top + rect.bottom) / 2;
+                if execute_click(cx, cy).is_ok() {
+                    return Some(());
+                }
+            }
+        }
+    }
+    if let Ok(child) = walker.GetFirstChildElement(element) {
+        if walk_and_click(walker, &child, name, depth - 1).is_some() {
+            return Some(());
+        }
+        let mut sibling = child;
+        while let Ok(next) = walker.GetNextSiblingElement(&sibling) {
+            if walk_and_click(walker, &next, name, depth - 1).is_some() {
+                return Some(());
+            }
+            sibling = next;
+        }
+    }
+    None
+}
+
 // ─── Action dispatcher ──────────────────────────────────────────────────────────
 
-/// Executes a single agent action.
+/// Executes a single agent action. Returns the string result:
+/// `"ok"` for side-effecting actions, or the actual data string for read-only
+/// query actions (`GetActiveWindowInfo`, `ListOpenWindows`, `ReadFocusedElement`).
 #[cfg_attr(coverage_nightly, coverage(off))]
-pub fn execute_action(action: &AgentAction) -> Result<(), String> {
+pub fn execute_action(action: &AgentAction) -> Result<String, String> {
     match action {
-        AgentAction::Click { x, y } => execute_click(*x, *y),
-        AgentAction::DoubleClick { x, y } => execute_double_click(*x, *y),
-        AgentAction::RightClick { x, y } => execute_right_click(*x, *y),
-        AgentAction::Drag { start_x, start_y, end_x, end_y, duration_ms } => {
-            execute_drag(*start_x, *start_y, *end_x, *end_y, *duration_ms)
+        AgentAction::Click { x, y } => execute_click(*x, *y).map(|_| "ok".to_string()),
+        AgentAction::DoubleClick { x, y } => execute_double_click(*x, *y).map(|_| "ok".to_string()),
+        AgentAction::RightClick { x, y } => execute_right_click(*x, *y).map(|_| "ok".to_string()),
+        AgentAction::Drag {
+            start_x,
+            start_y,
+            end_x,
+            end_y,
+            duration_ms,
+        } => {
+            execute_drag(*start_x, *start_y, *end_x, *end_y, *duration_ms).map(|_| "ok".to_string())
         }
-        AgentAction::TypeText { text } => execute_type_text(text),
-        AgentAction::KeyPress { modifiers, key } => execute_key_press(modifiers, key),
-        AgentAction::Scroll { direction, amount } => execute_scroll(direction, *amount),
-        AgentAction::Launch { target } => execute_launch(target),
-        AgentAction::Done { .. } => Ok(()),
-        AgentAction::Screenshot {} => Ok(()),
+        AgentAction::TypeText { text } => execute_type_text(text).map(|_| "ok".to_string()),
+        AgentAction::KeyPress { modifiers, key } => {
+            execute_key_press(modifiers, key).map(|_| "ok".to_string())
+        }
+        AgentAction::Scroll { direction, amount } => {
+            execute_scroll(direction, *amount).map(|_| "ok".to_string())
+        }
+        AgentAction::Launch { target } => execute_launch(target).map(|_| "ok".to_string()),
+        AgentAction::Done { .. } => Ok("ok".to_string()),
+        AgentAction::Screenshot {} => Ok("ok".to_string()),
+        AgentAction::GetActiveWindowInfo {} => get_active_window_info(),
+        AgentAction::ListOpenWindows {} => list_open_windows(),
+        AgentAction::ReadFocusedElement {} => read_focused_element(),
+        AgentAction::FindAndActivate { name } => find_and_activate(name).map(|_| "ok".to_string()),
     }
 }
 
@@ -302,7 +519,7 @@ pub fn execute_action(action: &AgentAction) -> Result<(), String> {
 /// Tauri command wrapper for executing a single agent action from the frontend.
 #[tauri::command]
 pub fn execute_action_command(action: AgentAction) -> Result<String, String> {
-    execute_action(&action).map(|_| "ok".to_string())
+    execute_action(&action)
 }
 
 // ─── Action parsing ─────────────────────────────────────────────────────────────
@@ -321,31 +538,52 @@ pub fn parse_action_line(line: &str) -> Option<AgentAction> {
 
     match action.as_str() {
         "CLICK" => {
-            let nums: Vec<i32> = params.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+            let nums: Vec<i32> = params
+                .split_whitespace()
+                .filter_map(|s| s.parse().ok())
+                .collect();
             if nums.len() >= 2 {
-                Some(AgentAction::Click { x: nums[0], y: nums[1] })
+                Some(AgentAction::Click {
+                    x: nums[0],
+                    y: nums[1],
+                })
             } else {
                 None
             }
         }
         "DOUBLE_CLICK" => {
-            let nums: Vec<i32> = params.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+            let nums: Vec<i32> = params
+                .split_whitespace()
+                .filter_map(|s| s.parse().ok())
+                .collect();
             if nums.len() >= 2 {
-                Some(AgentAction::DoubleClick { x: nums[0], y: nums[1] })
+                Some(AgentAction::DoubleClick {
+                    x: nums[0],
+                    y: nums[1],
+                })
             } else {
                 None
             }
         }
         "RIGHT_CLICK" => {
-            let nums: Vec<i32> = params.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+            let nums: Vec<i32> = params
+                .split_whitespace()
+                .filter_map(|s| s.parse().ok())
+                .collect();
             if nums.len() >= 2 {
-                Some(AgentAction::RightClick { x: nums[0], y: nums[1] })
+                Some(AgentAction::RightClick {
+                    x: nums[0],
+                    y: nums[1],
+                })
             } else {
                 None
             }
         }
         "DRAG" => {
-            let nums: Vec<i32> = params.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+            let nums: Vec<i32> = params
+                .split_whitespace()
+                .filter_map(|s| s.parse().ok())
+                .collect();
             if nums.len() >= 4 {
                 Some(AgentAction::Drag {
                     start_x: nums[0],
@@ -358,13 +596,18 @@ pub fn parse_action_line(line: &str) -> Option<AgentAction> {
                 None
             }
         }
-        "TYPE" => Some(AgentAction::TypeText { text: params.to_string() }),
+        "TYPE" => Some(AgentAction::TypeText {
+            text: params.to_string(),
+        }),
         "KEY_PRESS" => {
             let key_parts: Vec<&str> = params.split('+').collect();
             if key_parts.is_empty() {
                 return None;
             }
-            let modifiers: Vec<String> = key_parts[..key_parts.len() - 1].iter().map(|s| s.to_string()).collect();
+            let modifiers: Vec<String> = key_parts[..key_parts.len() - 1]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
             let key = key_parts.last()?.to_string();
             Some(AgentAction::KeyPress { modifiers, key })
         }
@@ -378,9 +621,25 @@ pub fn parse_action_line(line: &str) -> Option<AgentAction> {
                 None
             }
         }
-        "LAUNCH" => Some(AgentAction::Launch { target: params.to_string() }),
-        "DONE" => Some(AgentAction::Done { summary: params.to_string() }),
+        "LAUNCH" => Some(AgentAction::Launch {
+            target: params.to_string(),
+        }),
+        "DONE" => Some(AgentAction::Done {
+            summary: params.to_string(),
+        }),
         "SCREENSHOT" => Some(AgentAction::Screenshot {}),
+        "WINDOW_INFO" => Some(AgentAction::GetActiveWindowInfo {}),
+        "LIST_WINDOWS" => Some(AgentAction::ListOpenWindows {}),
+        "READ_FOCUSED" => Some(AgentAction::ReadFocusedElement {}),
+        "FIND_ACTIVATE" => {
+            if params.is_empty() {
+                None
+            } else {
+                Some(AgentAction::FindAndActivate {
+                    name: params.to_string(),
+                })
+            }
+        }
         _ => None,
     }
 }
@@ -410,7 +669,11 @@ fn key_input(vk: u16, up: bool) -> INPUT {
             ki: KEYBDINPUT {
                 wVk: VIRTUAL_KEY(vk),
                 wScan: 0,
-                dwFlags: if up { KEYEVENTF_KEYUP } else { KEYBD_EVENT_FLAGS(0) },
+                dwFlags: if up {
+                    KEYEVENTF_KEYUP
+                } else {
+                    KEYBD_EVENT_FLAGS(0)
+                },
                 time: 0,
                 dwExtraInfo: 0,
             },
@@ -439,7 +702,10 @@ mod tests {
     #[test]
     fn parse_double_click_action() {
         let action = parse_action_line("DOUBLE_CLICK 100 200").unwrap();
-        assert!(matches!(action, AgentAction::DoubleClick { x: 100, y: 200 }));
+        assert!(matches!(
+            action,
+            AgentAction::DoubleClick { x: 100, y: 200 }
+        ));
     }
 
     #[test]
@@ -451,13 +717,31 @@ mod tests {
     #[test]
     fn parse_drag_action() {
         let action = parse_action_line("DRAG 100 200 300 400 500").unwrap();
-        assert!(matches!(action, AgentAction::Drag { start_x: 100, start_y: 200, end_x: 300, end_y: 400, duration_ms: 500 }));
+        assert!(matches!(
+            action,
+            AgentAction::Drag {
+                start_x: 100,
+                start_y: 200,
+                end_x: 300,
+                end_y: 400,
+                duration_ms: 500
+            }
+        ));
     }
 
     #[test]
     fn parse_drag_default_duration() {
         let action = parse_action_line("DRAG 10 20 30 40").unwrap();
-        assert!(matches!(action, AgentAction::Drag { start_x: 10, start_y: 20, end_x: 30, end_y: 40, duration_ms: 300 }));
+        assert!(matches!(
+            action,
+            AgentAction::Drag {
+                start_x: 10,
+                start_y: 20,
+                end_x: 30,
+                end_y: 40,
+                duration_ms: 300
+            }
+        ));
     }
 
     #[test]
@@ -469,25 +753,33 @@ mod tests {
     #[test]
     fn parse_key_press_with_modifiers() {
         let action = parse_action_line("KEY_PRESS ctrl+c").unwrap();
-        assert!(matches!(action, AgentAction::KeyPress { ref modifiers, ref key } if modifiers.len() == 1 && key == "c"));
+        assert!(
+            matches!(action, AgentAction::KeyPress { ref modifiers, ref key } if modifiers.len() == 1 && key == "c")
+        );
     }
 
     #[test]
     fn parse_key_press_multiple_modifiers() {
         let action = parse_action_line("KEY_PRESS ctrl+shift+s").unwrap();
-        assert!(matches!(action, AgentAction::KeyPress { ref modifiers, ref key } if modifiers.len() == 2 && key == "s"));
+        assert!(
+            matches!(action, AgentAction::KeyPress { ref modifiers, ref key } if modifiers.len() == 2 && key == "s")
+        );
     }
 
     #[test]
     fn parse_scroll_up() {
         let action = parse_action_line("SCROLL up 5").unwrap();
-        assert!(matches!(action, AgentAction::Scroll { ref direction, amount } if direction == "up" && amount == 5));
+        assert!(
+            matches!(action, AgentAction::Scroll { ref direction, amount } if direction == "up" && amount == 5)
+        );
     }
 
     #[test]
     fn parse_scroll_down() {
         let action = parse_action_line("SCROLL down 3").unwrap();
-        assert!(matches!(action, AgentAction::Scroll { ref direction, amount } if direction == "down" && amount == 3));
+        assert!(
+            matches!(action, AgentAction::Scroll { ref direction, amount } if direction == "down" && amount == 3)
+        );
     }
 
     #[test]
@@ -499,13 +791,47 @@ mod tests {
     #[test]
     fn parse_done_action() {
         let action = parse_action_line("DONE Task completed successfully").unwrap();
-        assert!(matches!(action, AgentAction::Done { ref summary } if summary == "Task completed successfully"));
+        assert!(
+            matches!(action, AgentAction::Done { ref summary } if summary == "Task completed successfully")
+        );
     }
 
     #[test]
     fn parse_screenshot_action() {
         let action = parse_action_line("SCREENSHOT").unwrap();
         assert!(matches!(action, AgentAction::Screenshot {}));
+    }
+
+    #[test]
+    fn parse_window_info_action() {
+        let action = parse_action_line("WINDOW_INFO").unwrap();
+        assert!(matches!(action, AgentAction::GetActiveWindowInfo {}));
+    }
+
+    #[test]
+    fn parse_list_windows_action() {
+        let action = parse_action_line("LIST_WINDOWS").unwrap();
+        assert!(matches!(action, AgentAction::ListOpenWindows {}));
+    }
+
+    #[test]
+    fn parse_read_focused_action() {
+        let action = parse_action_line("READ_FOCUSED").unwrap();
+        assert!(matches!(action, AgentAction::ReadFocusedElement {}));
+    }
+
+    #[test]
+    fn parse_find_activate_action() {
+        let action = parse_action_line("FIND_ACTIVATE Submit Button").unwrap();
+        assert!(
+            matches!(action, AgentAction::FindAndActivate { ref name } if name == "Submit Button")
+        );
+    }
+
+    #[test]
+    fn parse_find_activate_empty_returns_none() {
+        assert!(parse_action_line("FIND_ACTIVATE").is_none());
+        assert!(parse_action_line("FIND_ACTIVATE   ").is_none());
     }
 
     #[test]
@@ -564,9 +890,22 @@ mod tests {
     fn action_serialization_roundtrip() {
         let actions = vec![
             AgentAction::Click { x: 100, y: 200 },
-            AgentAction::TypeText { text: "Hello".to_string() },
-            AgentAction::KeyPress { modifiers: vec!["ctrl".to_string()], key: "c".to_string() },
-            AgentAction::Done { summary: "Done".to_string() },
+            AgentAction::TypeText {
+                text: "Hello".to_string(),
+            },
+            AgentAction::KeyPress {
+                modifiers: vec!["ctrl".to_string()],
+                key: "c".to_string(),
+            },
+            AgentAction::Done {
+                summary: "Done".to_string(),
+            },
+            AgentAction::GetActiveWindowInfo {},
+            AgentAction::ListOpenWindows {},
+            AgentAction::ReadFocusedElement {},
+            AgentAction::FindAndActivate {
+                name: "OK".to_string(),
+            },
         ];
         for action in actions {
             let json = serde_json::to_string(&action).unwrap();

@@ -251,6 +251,13 @@ fn tool_call_to_action(tc: &ToolCall) -> Option<AgentAction> {
             Some(AgentAction::Launch { target })
         }
         "computer_screenshot" => Some(AgentAction::Screenshot {}),
+        "computer_get_active_window" => Some(AgentAction::GetActiveWindowInfo {}),
+        "computer_list_windows" => Some(AgentAction::ListOpenWindows {}),
+        "computer_read_focused" => Some(AgentAction::ReadFocusedElement {}),
+        "computer_find_activate" => {
+            let name = args.get("name")?.as_str()?.to_string();
+            Some(AgentAction::FindAndActivate { name })
+        }
         // Anthropic computer_use tool uses a single "computer" name with an "action" field.
         "computer" => {
             let action_type = args.get("action")?.as_str()?;
@@ -365,6 +372,10 @@ fn describe_action(action: &AgentAction) -> String {
         AgentAction::Launch { target } => format!("Open \"{}\"", target),
         AgentAction::Done { summary } => format!("Done: {}", summary),
         AgentAction::Screenshot {} => "Take screenshot".to_string(),
+        AgentAction::GetActiveWindowInfo {} => "Get active window info".to_string(),
+        AgentAction::ListOpenWindows {} => "List open windows".to_string(),
+        AgentAction::ReadFocusedElement {} => "Read focused element".to_string(),
+        AgentAction::FindAndActivate { name } => format!("Find and activate \"{}\"", name),
     }
 }
 
@@ -384,6 +395,10 @@ Available actions (one per line, must be EXACTLY formatted):
 - SCROLL direction amount — Scroll "up" or "down" by amount (default unit is 3 lines)
 - LAUNCH target — Open a program, file, or URL
 - SCREENSHOT — Take another screenshot (for checking progress)
+- WINDOW_INFO — Get the title of the active foreground window
+- LIST_WINDOWS — List all visible top-level window titles
+- READ_FOCUSED — Read the accessible name/value of the currently focused UI element
+- FIND_ACTIVATE element_name — Find and click a UI element by its accessible name
 - DONE summary — Task is complete, summarize what was accomplished
 
 Important rules:
@@ -411,6 +426,10 @@ Available actions (one per line, must be EXACTLY formatted):
 - KEY_PRESS modifiers+key — Press key combo, e.g. "ctrl+c", "ctrl+shift+s"
 - SCROLL direction amount — Scroll "up" or "down" by amount (default unit is 3 lines)
 - LAUNCH target — Open a program, file, or URL
+- WINDOW_INFO — Get the title of the active foreground window
+- LIST_WINDOWS — List all visible top-level window titles
+- READ_FOCUSED — Read the accessible name/value of the currently focused UI element
+- FIND_ACTIVATE element_name — Find and click a UI element by its accessible name
 - DONE summary — Task is complete, summarize what was accomplished
 
 Important rules:
@@ -754,7 +773,17 @@ async fn run_tool_use_loop(
                     }
                 }
             } else {
-                execute_action_with_result(&app_handle, &state, &action).await?;
+                let action_result =
+                    execute_action_with_result(&app_handle, &state, &action).await?;
+                // For read-only query actions the result carries the data.
+                // Inject it back so the model can see it in the next message.
+                if action_result != "ok" && !action_result.is_empty() {
+                    messages.push(crate::commands::ChatMessage {
+                        role: "user".to_string(),
+                        content: format!("Query result:\n{action_result}"),
+                        images: None,
+                    });
+                }
             }
 
             tokio::time::sleep(Duration::from_millis(ACTION_DELAY_MS)).await;
@@ -796,9 +825,9 @@ async fn execute_action_with_result(
     app_handle: &tauri::AppHandle,
     state: &AgentState,
     action: &AgentAction,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let action_desc = format!("{:?}", action);
-    let result = tokio::task::spawn_blocking({
+    let result: Result<String, String> = tokio::task::spawn_blocking({
         let action = action.clone();
         move || computer_control::execute_action(&action)
     })
@@ -806,18 +835,18 @@ async fn execute_action_with_result(
     .map_err(|e| format!("Action execution panicked: {e}"))?;
 
     let result_msg = match result {
-        Ok(()) => "ok".to_string(),
-        Err(e) => e,
+        Ok(ref s) => s.clone(),
+        Err(ref e) => e.clone(),
     };
     state.add_to_history(format!("[Action] {} -> {}", action_desc, result_msg));
     let _ = app_handle.emit(
         "mate://agent",
         AgentEvent::ActionExecuted {
             action: action_desc,
-            result: result_msg,
+            result: result_msg.clone(),
         },
     );
-    Ok(())
+    Ok(result_msg)
 }
 
 /// Legacy agent loop using Ollama text-parsing approach.
@@ -1001,7 +1030,11 @@ async fn run_text_parse_loop(
                 || upper.starts_with("SCROLL")
                 || upper.starts_with("LAUNCH")
                 || upper.starts_with("DONE")
-                || upper.starts_with("SCREENSHOT");
+                || upper.starts_with("SCREENSHOT")
+                || upper.starts_with("WINDOW_INFO")
+                || upper.starts_with("LIST_WINDOWS")
+                || upper.starts_with("READ_FOCUSED")
+                || upper.starts_with("FIND_ACTIVATE");
 
             if !is_action {
                 continue;
@@ -1096,7 +1129,16 @@ async fn run_text_parse_loop(
                 }
             } else {
                 actions_executed += 1;
-                execute_action_with_result(&app_handle, &state, &action).await?;
+                let action_result =
+                    execute_action_with_result(&app_handle, &state, &action).await?;
+                // For read-only query actions inject the result back so the model
+                // can reason about it on the next text-parse iteration.
+                if action_result != "ok" && !action_result.is_empty() {
+                    conversation.push(serde_json::json!({
+                        "role": "user",
+                        "content": format!("Query result:\n{action_result}"),
+                    }));
+                }
             }
 
             tokio::time::sleep(Duration::from_millis(ACTION_DELAY_MS)).await;
@@ -1742,6 +1784,82 @@ mod tests {
         };
         let action = tool_call_to_action(&tc).unwrap();
         assert!(matches!(action, AgentAction::TypeText { ref text } if text == "Hello World"));
+    }
+
+    #[test]
+    fn tool_call_to_action_get_active_window() {
+        let tc = ToolCall {
+            id: "8".to_string(),
+            name: "computer_get_active_window".to_string(),
+            arguments: "{}".to_string(),
+        };
+        let action = tool_call_to_action(&tc).unwrap();
+        assert!(matches!(action, AgentAction::GetActiveWindowInfo {}));
+    }
+
+    #[test]
+    fn tool_call_to_action_list_windows() {
+        let tc = ToolCall {
+            id: "9".to_string(),
+            name: "computer_list_windows".to_string(),
+            arguments: "{}".to_string(),
+        };
+        let action = tool_call_to_action(&tc).unwrap();
+        assert!(matches!(action, AgentAction::ListOpenWindows {}));
+    }
+
+    #[test]
+    fn tool_call_to_action_read_focused() {
+        let tc = ToolCall {
+            id: "10".to_string(),
+            name: "computer_read_focused".to_string(),
+            arguments: "{}".to_string(),
+        };
+        let action = tool_call_to_action(&tc).unwrap();
+        assert!(matches!(action, AgentAction::ReadFocusedElement {}));
+    }
+
+    #[test]
+    fn tool_call_to_action_find_activate() {
+        let tc = ToolCall {
+            id: "11".to_string(),
+            name: "computer_find_activate".to_string(),
+            arguments: r#"{"name": "OK"}"#.to_string(),
+        };
+        let action = tool_call_to_action(&tc).unwrap();
+        assert!(matches!(action, AgentAction::FindAndActivate { ref name } if name == "OK"));
+    }
+
+    #[test]
+    fn tool_call_to_action_find_activate_missing_name_returns_none() {
+        let tc = ToolCall {
+            id: "12".to_string(),
+            name: "computer_find_activate".to_string(),
+            arguments: "{}".to_string(),
+        };
+        assert!(tool_call_to_action(&tc).is_none());
+    }
+
+    #[test]
+    fn describe_action_uia_variants() {
+        assert_eq!(
+            describe_action(&AgentAction::GetActiveWindowInfo {}),
+            "Get active window info"
+        );
+        assert_eq!(
+            describe_action(&AgentAction::ListOpenWindows {}),
+            "List open windows"
+        );
+        assert_eq!(
+            describe_action(&AgentAction::ReadFocusedElement {}),
+            "Read focused element"
+        );
+        assert_eq!(
+            describe_action(&AgentAction::FindAndActivate {
+                name: "Submit".to_string()
+            }),
+            "Find and activate \"Submit\""
+        );
     }
 
     #[test]

@@ -257,6 +257,53 @@ pub fn openai_computer_tools() -> Vec<OpenAITool> {
                 }),
             },
         },
+        OpenAITool {
+            r#type: "function".to_string(),
+            function: OpenAIFunction {
+                name: "computer_get_active_window".to_string(),
+                description: "Return the title of the currently active (foreground) window.".to_string(),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {},
+                }),
+            },
+        },
+        OpenAITool {
+            r#type: "function".to_string(),
+            function: OpenAIFunction {
+                name: "computer_list_windows".to_string(),
+                description: "List all visible top-level window titles on the desktop.".to_string(),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {},
+                }),
+            },
+        },
+        OpenAITool {
+            r#type: "function".to_string(),
+            function: OpenAIFunction {
+                name: "computer_read_focused".to_string(),
+                description: "Read the accessible name and current value of the focused UI element (e.g. Excel cell, address bar, text field).".to_string(),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {},
+                }),
+            },
+        },
+        OpenAITool {
+            r#type: "function".to_string(),
+            function: OpenAIFunction {
+                name: "computer_find_activate".to_string(),
+                description: "Find a UI control by its accessible name and click it. Useful when pixel coordinates are unknown.".to_string(),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string", "description": "Accessible name (or substring) of the element to find and click" },
+                    },
+                    "required": ["name"],
+                }),
+            },
+        },
     ]
 }
 
@@ -484,7 +531,7 @@ mod tests {
     #[test]
     fn openai_tool_definitions_count() {
         let tools = openai_computer_tools();
-        assert_eq!(tools.len(), 8); // click, double_click, right_click, type, key_press, scroll, launch, screenshot
+        assert_eq!(tools.len(), 12); // click, double_click, right_click, type, key_press, scroll, launch, screenshot, get_active_window, list_windows, read_focused, find_activate
     }
 
     #[test]
