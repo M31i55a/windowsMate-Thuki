@@ -1033,7 +1033,7 @@ describe('App', () => {
     await act(async () => {});
 
     // Show overlay near screen bottom: window_y=750, screen_bottom=900.
-    // 750 + MAX_CHAT_WINDOW_HEIGHT(648) = 1398 > 900 → grows upward.
+    // 750 + MAX_CHAT_WINDOW_HEIGHT(600) = 1350 > 900 → grows upward.
     await act(async () => {
       emitTauriEvent('mate://visibility', {
         state: 'show',
@@ -1053,7 +1053,7 @@ describe('App', () => {
     await act(async () => {});
 
     // Show overlay near top: window_y=100, screen_bottom=900.
-    // 100 + 648 = 748 < 900 → grows downward.
+    // 100 + 600 = 700 < 900 → grows downward.
     await act(async () => {
       emitTauriEvent('mate://visibility', {
         state: 'show',

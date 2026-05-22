@@ -60,10 +60,8 @@ const HIDE_COMMIT_DELAY_MS = 350;
 
 /** Must match `OVERLAY_LOGICAL_WIDTH` in `src-tauri/src/lib.rs`. */
 const OVERLAY_WIDTH = 650;
-/** Total transparent padding around the morphing container: pt-2(8) + pb-6(24) + motion py-2(16). */
-const CONTAINER_VERTICAL_PADDING = 48;
-/** Padding in chat mode — no outer glass gap, window fills edge-to-edge. */
-const CONTAINER_VERTICAL_PADDING_CHAT = 0;
+/** Total transparent padding around the morphing container. Zero — content fills edge-to-edge. */
+const CONTAINER_VERTICAL_PADDING = 0;
 /** Max morphing-container height in chat mode (matches `max-h-[600px]`) + vertical padding. */
 const MAX_CHAT_WINDOW_HEIGHT = 600 + CONTAINER_VERTICAL_PADDING;
 
@@ -380,11 +378,7 @@ function App() {
             if (overlayStateRef.current === 'minibar') return;
             for (const entry of entries) {
               const rect = entry.target.getBoundingClientRect();
-              // In chat mode padding is removed so no extra room is needed;
-              // in bar mode keep the 48px clearance for drop shadows.
-              const vPad = isChatModeRef.current
-                ? CONTAINER_VERTICAL_PADDING_CHAT
-                : CONTAINER_VERTICAL_PADDING;
+              const vPad = CONTAINER_VERTICAL_PADDING;
               let targetHeight =
                 Math.ceil(rect.height) + vPad;
 
@@ -1712,7 +1706,7 @@ function App() {
       onDragOver={handleRootDragOver}
       onDragLeave={handleRootDragLeave}
       onDrop={handleRootDrop}
-      className={`flex flex-col items-center ${growsUpward ? 'justify-end' : 'justify-start'} h-screen w-screen ${isChatMode ? 'p-0' : 'px-3 pt-2 pb-6'} bg-transparent overflow-visible`}
+      className={`flex flex-col items-center ${growsUpward ? 'justify-end' : 'justify-start'} h-screen w-screen p-0 bg-transparent overflow-visible`}
     >
       <AnimatePresence mode="wait">
         {shouldRenderOverlay ? (
@@ -1722,7 +1716,7 @@ function App() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -12, scale: 0.98 }}
             transition={{ type: 'spring', stiffness: 260, damping: 26, mass: 0.8 }}
-            className={`w-full max-w-2xl ${isChatMode ? 'p-0' : 'px-2 py-2'} overflow-visible`}
+            className={`w-full max-w-2xl p-0 overflow-visible`}
           >
             {/* Relative wrapper — serves as the positioning context for the
                 chat-mode history dropdown so it can sit outside the morphing
@@ -1743,7 +1737,7 @@ function App() {
                   background: `rgba(32,32,32,var(--app-bg-opacity, 0.92))`,
                   backdropFilter: 'blur(var(--chat-bg-blur, 10px))',
                 }}
-                className={`morphing-container relative flex flex-col max-h-150 overflow-hidden ${isChatMode ? 'rounded-none' : 'rounded-xl'}`}
+                className={`morphing-container relative flex flex-col max-h-150 overflow-hidden rounded-none`}
               >
                 {/* Model Picker Panel — floats above conversation when open */}
                 {isModelPickerOpen && (
