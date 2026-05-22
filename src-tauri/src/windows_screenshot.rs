@@ -86,6 +86,19 @@ fn capture_virtual_screen_pixels() -> Result<(i32, i32, u32, u32, Vec<u8>), Stri
 #[cfg(target_os = "windows")]
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub async fn capture_full_screen_command(app_handle: tauri::AppHandle) -> Result<String, String> {
+    // Hide the overlay window so it's not included in the screenshot.
+    let hide_handle = app_handle.clone();
+    app_handle
+        .run_on_main_thread(move || {
+            if let Some(w) = hide_handle.get_webview_window("main") {
+                let _ = w.hide();
+            }
+        })
+        .map_err(|e| format!("failed to hide window: {e}"))?;
+
+    // Give the OS time to shift focus away from the overlay.
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
     let base_dir = app_handle
         .path()
         .app_data_dir()
@@ -108,6 +121,15 @@ pub async fn capture_full_screen_command(app_handle: tauri::AppHandle) -> Result
     })
     .await
     .map_err(|e| format!("image encoding task failed: {e}"))?;
+
+    // Re-show the overlay window after capture.
+    let show_handle = app_handle.clone();
+    let _ = app_handle.run_on_main_thread(move || {
+        if let Some(w) = show_handle.get_webview_window("main") {
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+    });
 
     result
 }
