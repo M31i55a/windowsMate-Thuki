@@ -101,6 +101,8 @@ type OverlayVisibilityPayload =
       screen_bottom_y: number | null;
       /** When true the backend wants to immediately explain the selected text. */
       auto_explain?: boolean;
+      /** When true the backend wants to activate inline-edit mode. */
+      inline_edit?: boolean;
     }
   | { state: 'hide-request' };
 type OverlayState = 'visible' | 'hidden' | 'hiding' | 'minibar';
@@ -504,6 +506,7 @@ function App() {
       windowY: number | null,
       screenBottomY: number | null,
       autoExplain: boolean = false,
+      inlineEdit: boolean = false,
     ) => {
       const shouldGrowUp =
         windowY !== null &&
@@ -522,7 +525,7 @@ function App() {
       setQuery('');
       setSelectedContext(context);
       setIsHistoryOpen(false);
-      setInlineEditMode(false);
+      setInlineEditMode(inlineEdit);
       setAttachedImages((prev) => {
         for (const img of prev) URL.revokeObjectURL(img.blobUrl);
         return [];
@@ -1534,6 +1537,7 @@ function App() {
               payload.window_y ?? null,
               payload.screen_bottom_y ?? null,
               payload.auto_explain ?? false,
+              payload.inline_edit ?? false,
             );
             return;
           }

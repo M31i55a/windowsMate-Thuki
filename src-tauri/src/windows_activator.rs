@@ -17,8 +17,8 @@ use windows::Win32::System::DataExchange::{
 use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
 use windows::Win32::System::Ole::CF_UNICODETEXT;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_0, INPUT_TYPE, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VK_C,
-    VK_CONTROL,
+    SendInput, INPUT, INPUT_0, INPUT_TYPE, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
+    VIRTUAL_KEY, VK_C, VK_CONTROL,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GetCursorPos, GetForegroundWindow, GetMessageW, SetWindowsHookExW,
@@ -39,6 +39,10 @@ const VK_RCONTROL: i32 = 0xA3;
 const VK_SPACE: i32 = 0x20;
 /// Time window within which a second Ctrl+Space counts as Ctrl+Space+Space.
 const DOUBLE_SPACE_WINDOW: Duration = Duration::from_millis(350);
+/// Virtual key code for the E key (used for double-tap inline-edit shortcut).
+const VK_E: i32 = 0x45;
+/// Time window within which a second E tap is treated as the double-E inline-edit trigger.
+const DOUBLE_E_WINDOW: Duration = Duration::from_millis(400);
 
 // ─── Global Hook State ─────────────────────────────────────────────────────────
 
@@ -77,6 +81,25 @@ static GLOBAL_ON_QUOTE_FILL: LazyLock<Mutex<Option<QuoteFillCallback>>> =
 /// (Ctrl+Space+Space) within DOUBLE_SPACE_WINDOW.
 static LAST_CTRL_SPACE_INSTANT: LazyLock<Mutex<Option<Instant>>> =
     LazyLock::new(|| Mutex::new(None));
+
+type InlineEditCallback = Arc<dyn Fn() + Send + Sync>;
+
+#[allow(clippy::type_complexity)]
+static GLOBAL_ON_INLINE_EDIT: LazyLock<Mutex<Option<InlineEditCallback>>> =
+    LazyLock::new(|| Mutex::new(None));
+
+/// Timestamp of the most recent E key-down that started a potential double-tap.
+static LAST_E_DOWN_INSTANT: LazyLock<Mutex<Option<Instant>>> = LazyLock::new(|| Mutex::new(None));
+
+/// True while the E key is physically held (used to detect auto-repeat vs. fresh taps).
+static E_IS_DOWN: AtomicBool = AtomicBool::new(false);
+
+/// True when the first E press is being suppressed while we wait for a potential
+/// second tap. Cleared when the double-tap fires or the replay timer elapses.
+static E_PENDING_REPLAY: AtomicBool = AtomicBool::new(false);
+
+/// Generation counter that lets the replay timer detect cancellation.
+static E_PENDING_GEN: AtomicU64 = AtomicU64::new(0);
 
 /// Generation counter incremented on every Ctrl+Space press. A deferred
 /// auto-explain thread compares its snapshot against the current value; if
@@ -184,6 +207,22 @@ impl OverlayActivator {
         let mut cb = GLOBAL_ON_QUOTE_FILL.lock().unwrap();
         *cb = Some(Arc::new(callback));
     }
+
+    /// Registers the callback invoked when the user double-taps the E key.
+    ///
+    /// Both E key presses are suppressed. If no second E arrives within
+    /// DOUBLE_E_WINDOW, the first E is replayed via SendInput so normal
+    /// typing is not disrupted. When the double-tap is detected the callback
+    /// fires and the first E is discarded (not replayed).
+    /// The callback runs on a background thread; do not block for long.
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    pub fn set_inline_edit<F>(&self, callback: F)
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        let mut cb = GLOBAL_ON_INLINE_EDIT.lock().unwrap();
+        *cb = Some(Arc::new(callback));
+    }
 }
 
 #[cfg_attr(coverage_nightly, coverage(off))]
@@ -272,6 +311,16 @@ unsafe extern "system" fn keyboard_hook_callback(
         // - Double Space (second within DOUBLE_SPACE_WINDOW) → quote-fill only;
         //   the user types their own question.
         // In both cases the Space keystroke is suppressed.
+
+        // This Ctrl press was used as a keyboard shortcut (Ctrl+Space), not as
+        // a standalone double-tap activation tap. Cancel the activation window so
+        // a subsequent Ctrl press (e.g. a second Ctrl+Space within 400 ms) does
+        // not incorrectly fire the double-tap overlay toggle.
+        {
+            let mut s = GLOBAL_ACTIVATION_STATE.lock().unwrap();
+            s.last_trigger = None;
+        }
+
         let now = Instant::now();
         let is_double = {
             let mut last = LAST_CTRL_SPACE_INSTANT.lock().unwrap();
@@ -303,6 +352,100 @@ unsafe extern "system" fn keyboard_hook_callback(
                 }
             });
         }
+        return LRESULT(1);
+    } else if vk_code == VK_E && !CTRL_HELD.load(Ordering::SeqCst) {
+        // Double-tap E → inline edit.
+        // The first E press is always suppressed while we wait to see if a
+        // second arrives. If no second E comes within DOUBLE_E_WINDOW the
+        // first is replayed via SendInput so normal typing is undisturbed.
+
+        let is_key_up = wparam_val == 0x0101 || wparam_val == 0x0105;
+
+        if is_key_up {
+            E_IS_DOWN.store(false, Ordering::SeqCst);
+            // Suppress the key-up that corresponds to a suppressed key-down.
+            if E_PENDING_REPLAY.load(Ordering::SeqCst) {
+                return LRESULT(1);
+            }
+            return unsafe { CallNextHookEx(None, code, w_param, l_param) };
+        }
+
+        if !is_press {
+            return unsafe { CallNextHookEx(None, code, w_param, l_param) };
+        }
+
+        // Filter auto-repeat: only handle fresh key-downs.
+        if E_IS_DOWN.swap(true, Ordering::SeqCst) {
+            if E_PENDING_REPLAY.load(Ordering::SeqCst) {
+                return LRESULT(1); // Still suppressing this hold
+            }
+            return unsafe { CallNextHookEx(None, code, w_param, l_param) };
+        }
+
+        let now = Instant::now();
+        let is_double = {
+            let last = LAST_E_DOWN_INSTANT.lock().unwrap();
+            last.map(|t| now.duration_since(t) < DOUBLE_E_WINDOW)
+                .unwrap_or(false)
+        };
+
+        if is_double {
+            // Second tap within window → inline edit.
+            *LAST_E_DOWN_INSTANT.lock().unwrap() = None;
+            // Cancel the pending replay for the first E.
+            E_PENDING_REPLAY.store(false, Ordering::SeqCst);
+            E_PENDING_GEN.fetch_add(1, Ordering::SeqCst);
+            let cb = GLOBAL_ON_INLINE_EDIT.lock().unwrap().clone();
+            if let Some(ref callback) = cb {
+                callback();
+            }
+            return LRESULT(1);
+        }
+
+        // First E press: suppress it and schedule a replay if no second comes.
+        *LAST_E_DOWN_INSTANT.lock().unwrap() = Some(now);
+        E_PENDING_REPLAY.store(true, Ordering::SeqCst);
+        let gen = E_PENDING_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+
+        std::thread::spawn(move || {
+            std::thread::sleep(DOUBLE_E_WINDOW);
+            if E_PENDING_GEN.load(Ordering::SeqCst) == gen
+                && E_PENDING_REPLAY.swap(false, Ordering::SeqCst)
+            {
+                // No double-tap arrived — replay the suppressed E press.
+                unsafe {
+                    let vk = VIRTUAL_KEY(0x45);
+                    let inputs: [INPUT; 2] = [
+                        INPUT {
+                            r#type: INPUT_TYPE(1),
+                            Anonymous: INPUT_0 {
+                                ki: KEYBDINPUT {
+                                    wVk: vk,
+                                    wScan: 0,
+                                    dwFlags: KEYBD_EVENT_FLAGS(0),
+                                    time: 0,
+                                    dwExtraInfo: 0,
+                                },
+                            },
+                        },
+                        INPUT {
+                            r#type: INPUT_TYPE(1),
+                            Anonymous: INPUT_0 {
+                                ki: KEYBDINPUT {
+                                    wVk: vk,
+                                    wScan: 0,
+                                    dwFlags: KEYEVENTF_KEYUP,
+                                    time: 0,
+                                    dwExtraInfo: 0,
+                                },
+                            },
+                        },
+                    ];
+                    SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+                }
+            }
+        });
+
         return LRESULT(1);
     }
 

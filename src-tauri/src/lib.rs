@@ -116,6 +116,9 @@ struct VisibilityPayload {
     /// When `true` the frontend should automatically submit the selected text
     /// as an explain query without waiting for user input.
     auto_explain: bool,
+    /// When `true` the frontend should activate inline-edit mode so the
+    /// AI response is applied back in-place to the originating text.
+    inline_edit: bool,
 }
 
 /// Emits a visibility transition to the frontend animation controller.
@@ -127,6 +130,7 @@ fn emit_overlay_visibility(
     window_y: Option<f64>,
     screen_bottom_y: Option<f64>,
     auto_explain: bool,
+    inline_edit: bool,
 ) {
     let _ = app_handle.emit(
         OVERLAY_VISIBILITY_EVENT,
@@ -137,6 +141,7 @@ fn emit_overlay_visibility(
             window_y,
             screen_bottom_y,
             auto_explain,
+            inline_edit,
         },
     );
 }
@@ -156,6 +161,7 @@ fn request_overlay_hide(app_handle: &tauri::AppHandle) {
             None,
             None,
             false,
+            false,
         );
     }
 }
@@ -171,12 +177,13 @@ fn show_overlay(
     app_handle: &tauri::AppHandle,
     ctx: crate::context::ActivationContext,
     auto_explain: bool,
+    inline_edit: bool,
 ) {
     let was_visible = OVERLAY_INTENDED_VISIBLE.swap(true, Ordering::SeqCst);
     if was_visible {
-        if auto_explain {
+        if auto_explain || inline_edit {
             // Overlay is already open — replay the entrance animation with the
-            // newly captured text so the frontend resets and auto-submits.
+            // newly captured text so the frontend resets to the new mode.
             emit_overlay_visibility(
                 app_handle,
                 OVERLAY_VISIBILITY_SHOW,
@@ -184,7 +191,8 @@ fn show_overlay(
                 None,
                 None,
                 None,
-                true,
+                auto_explain,
+                inline_edit,
             );
         }
         return;
@@ -290,6 +298,7 @@ fn show_overlay(
             }));
         }
     }
+    let inline_edit_flag = inline_edit;
     emit_overlay_visibility(
         app_handle,
         OVERLAY_VISIBILITY_SHOW,
@@ -298,6 +307,7 @@ fn show_overlay(
         window_y,
         screen_bottom_y,
         auto_explain,
+        inline_edit_flag,
     );
 }
 
@@ -308,6 +318,7 @@ fn show_overlay(
     app_handle: &tauri::AppHandle,
     ctx: crate::context::ActivationContext,
     auto_explain: bool,
+    inline_edit: bool,
 ) {
     if OVERLAY_INTENDED_VISIBLE.swap(true, Ordering::SeqCst) {
         return;
@@ -323,6 +334,7 @@ fn show_overlay(
             None,
             None,
             auto_explain,
+            inline_edit,
         );
     }
 }
@@ -410,6 +422,7 @@ fn toggle_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::Activation
                 None,
                 None,
                 false,
+                false,
             );
         });
         return;
@@ -418,7 +431,7 @@ fn toggle_overlay(app_handle: &tauri::AppHandle, ctx: crate::context::Activation
     if OVERLAY_INTENDED_VISIBLE.load(Ordering::SeqCst) {
         request_overlay_hide(app_handle);
     } else {
-        show_overlay(app_handle, ctx, false);
+        show_overlay(app_handle, ctx, false, false);
     }
 }
 
@@ -546,6 +559,7 @@ fn notify_frontend_ready(app_handle: tauri::AppHandle, db: tauri::State<history:
             &app_handle,
             crate::context::ActivationContext::empty(),
             false,
+            false,
         );
     }
 }
@@ -578,7 +592,7 @@ fn finish_onboarding(
                 let _ = window.set_always_on_top(true);
                 let _ = window.set_skip_taskbar(true);
             }
-            show_overlay(&handle, crate::context::ActivationContext::empty(), false);
+            show_overlay(&handle, crate::context::ActivationContext::empty(), false, false);
         });
     }
 
@@ -587,7 +601,7 @@ fn finish_onboarding(
     {
         let handle = app_handle.clone();
         let _ = app_handle.run_on_main_thread(move || {
-            show_overlay(&handle, crate::context::ActivationContext::empty(), false);
+            show_overlay(&handle, crate::context::ActivationContext::empty(), false, false);
         });
     }
 
@@ -713,7 +727,7 @@ pub fn run() {
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => {
-                        show_overlay(app, crate::context::ActivationContext::empty(), false);
+                        show_overlay(app, crate::context::ActivationContext::empty(), false, false);
                     }
                     "quit" => {
                         app.state::<crate::commands::GenerationState>().cancel();
@@ -763,7 +777,23 @@ pub fn run() {
                     std::thread::spawn(move || {
                         let ctx = crate::windows_activator::capture();
                         let _ = handle.run_on_main_thread(move || {
-                            show_overlay(&handle2, ctx, true);
+                            show_overlay(&handle2, ctx, true, false);
+                        });
+                    });
+                });
+
+                // ── Double-tap E inline-edit listener ─────────────────
+                let app_handle_ie = app.handle().clone();
+                activator.set_inline_edit(move || {
+                    if crate::agent::AGENT_RUNNING.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    let handle = app_handle_ie.clone();
+                    let handle2 = app_handle_ie.clone();
+                    std::thread::spawn(move || {
+                        let ctx = crate::windows_activator::capture();
+                        let _ = handle.run_on_main_thread(move || {
+                            show_overlay(&handle2, ctx, false, true);
                         });
                     });
                 });
