@@ -39,10 +39,12 @@ const VK_RCONTROL: i32 = 0xA3;
 const VK_SPACE: i32 = 0x20;
 /// Time window within which a second Ctrl+Space counts as Ctrl+Space+Space.
 const DOUBLE_SPACE_WINDOW: Duration = Duration::from_millis(350);
-/// Virtual key code for Left Shift (used for double-tap inline-edit shortcut).
+/// Virtual key codes for Shift keys.
 const VK_LSHIFT: i32 = 0xA0;
-/// Time window within which a second Left Shift tap triggers the inline-edit shortcut.
-const DOUBLE_SHIFT_WINDOW: Duration = Duration::from_millis(400);
+const VK_RSHIFT: i32 = 0xA1;
+/// Delay after Ctrl+Shift before the inline-edit fires, giving apps time to
+/// consume Ctrl+Shift+X shortcuts (e.g. Ctrl+Shift+B in VS Code).
+const CTRL_SHIFT_INLINE_DELAY: Duration = Duration::from_millis(700);
 
 // ─── Global Hook State ─────────────────────────────────────────────────────────
 
@@ -88,11 +90,12 @@ type InlineEditCallback = Arc<dyn Fn() + Send + Sync>;
 static GLOBAL_ON_INLINE_EDIT: LazyLock<Mutex<Option<InlineEditCallback>>> =
     LazyLock::new(|| Mutex::new(None));
 
-/// Timestamp of the most recent Left Shift key-down that started a potential double-tap.
-static LAST_LSHIFT_INSTANT: LazyLock<Mutex<Option<Instant>>> = LazyLock::new(|| Mutex::new(None));
+/// True while any Shift key is physically held.
+static SHIFT_HELD: AtomicBool = AtomicBool::new(false);
 
-/// True while Left Shift is physically held (used to suppress auto-repeat).
-static LSHIFT_IS_DOWN: AtomicBool = AtomicBool::new(false);
+/// Generation counter for the Ctrl+Shift inline-edit deferred timer.
+/// Incremented to cancel a pending timer when a non-modifier key is pressed.
+static CTRL_SHIFT_INLINE_GEN: AtomicU64 = AtomicU64::new(0);
 
 /// Generation counter incremented on every Ctrl+Space press. A deferred
 /// auto-explain thread compares its snapshot against the current value; if
@@ -201,11 +204,11 @@ impl OverlayActivator {
         *cb = Some(Arc::new(callback));
     }
 
-    /// Registers the callback invoked when the user double-taps Left Shift.
+    /// Registers the callback invoked when the user presses Ctrl+Shift and
+    /// holds without pressing any other key for 700 ms.
     ///
-    /// Left Shift produces no characters, so both presses are passed through
-    /// normally — no suppression or replay is needed. When two Left Shift
-    /// key-downs arrive within DOUBLE_SHIFT_WINDOW the callback fires.
+    /// All keys pass through normally — no suppression is performed.
+    /// The 700 ms delay lets apps consume Ctrl+Shift+X shortcuts first.
     /// The callback runs on a background thread; do not block for long.
     #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn set_inline_edit<F>(&self, callback: F)
@@ -277,12 +280,40 @@ unsafe extern "system" fn keyboard_hook_callback(
 
     let vk_code = kb_struct.vkCode as i32;
 
+    // Cancel any pending Ctrl+Shift inline-edit timer when a non-modifier key
+    // is pressed. This lets Ctrl+Shift+B (and similar chords) pass through
+    // without accidentally triggering the inline-edit.
+    let is_modifier = matches!(
+        vk_code,
+        0xA0 | 0xA1 | 0xA2 | 0xA3 | 0xA4 | 0xA5 // L/R Shift, Ctrl, Alt
+            | 0x10 | 0x11 | 0x12                  // generic Shift, Ctrl, Alt
+            | 0x14 | 0x5B | 0x5C // Caps Lock, Win L/R
+    );
+    if is_press && !is_modifier {
+        CTRL_SHIFT_INLINE_GEN.fetch_add(1, Ordering::SeqCst);
+    }
+
     if vk_code == VK_LCONTROL || vk_code == VK_RCONTROL {
         let is_release = wparam_val == 0x0101 || wparam_val == 0x0105;
         let key_down = is_press && !is_release;
 
-        // Track Ctrl held state for Ctrl+Space detection.
+        // Track Ctrl held state for Ctrl+Space and Ctrl+Shift detection.
         CTRL_HELD.store(key_down, Ordering::SeqCst);
+
+        // When Ctrl goes down while Shift is already held, start the
+        // Ctrl+Shift inline-edit timer.
+        if key_down && SHIFT_HELD.load(Ordering::SeqCst) {
+            let gen = CTRL_SHIFT_INLINE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+            let cb = GLOBAL_ON_INLINE_EDIT.lock().unwrap().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(CTRL_SHIFT_INLINE_DELAY);
+                if CTRL_SHIFT_INLINE_GEN.load(Ordering::SeqCst) == gen {
+                    if let Some(ref callback) = cb {
+                        callback();
+                    }
+                }
+            });
+        }
 
         let mut s = GLOBAL_ACTIVATION_STATE.lock().unwrap();
         if evaluate_activation(&mut s, key_down) {
@@ -345,14 +376,12 @@ unsafe extern "system" fn keyboard_hook_callback(
             });
         }
         return LRESULT(1);
-    } else if vk_code == VK_LSHIFT {
-        // Double-tap Left Shift → inline edit.
-        // Left Shift produces no characters, so all presses pass through normally.
-
+    } else if vk_code == VK_LSHIFT || vk_code == VK_RSHIFT {
+        // Track Shift held state and detect Ctrl+Shift for inline edit.
         let is_key_up = wparam_val == 0x0101 || wparam_val == 0x0105;
 
         if is_key_up {
-            LSHIFT_IS_DOWN.store(false, Ordering::SeqCst);
+            SHIFT_HELD.store(false, Ordering::SeqCst);
             return unsafe { CallNextHookEx(None, code, w_param, l_param) };
         }
 
@@ -360,27 +389,24 @@ unsafe extern "system" fn keyboard_hook_callback(
             return unsafe { CallNextHookEx(None, code, w_param, l_param) };
         }
 
-        // Filter auto-repeat: only handle fresh key-downs.
-        if LSHIFT_IS_DOWN.swap(true, Ordering::SeqCst) {
+        // Filter auto-repeat: only react on fresh key-downs.
+        if SHIFT_HELD.swap(true, Ordering::SeqCst) {
             return unsafe { CallNextHookEx(None, code, w_param, l_param) };
         }
 
-        let now = Instant::now();
-        let is_double = {
-            let last = LAST_LSHIFT_INSTANT.lock().unwrap();
-            last.map(|t| now.duration_since(t) < DOUBLE_SHIFT_WINDOW)
-                .unwrap_or(false)
-        };
-
-        if is_double {
-            // Second tap within window → fire inline edit.
-            *LAST_LSHIFT_INSTANT.lock().unwrap() = None;
+        // When Shift goes down while Ctrl is already held, start the
+        // Ctrl+Shift inline-edit timer.
+        if CTRL_HELD.load(Ordering::SeqCst) {
+            let gen = CTRL_SHIFT_INLINE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
             let cb = GLOBAL_ON_INLINE_EDIT.lock().unwrap().clone();
-            if let Some(ref callback) = cb {
-                callback();
-            }
-        } else {
-            *LAST_LSHIFT_INSTANT.lock().unwrap() = Some(now);
+            std::thread::spawn(move || {
+                std::thread::sleep(CTRL_SHIFT_INLINE_DELAY);
+                if CTRL_SHIFT_INLINE_GEN.load(Ordering::SeqCst) == gen {
+                    if let Some(ref callback) = cb {
+                        callback();
+                    }
+                }
+            });
         }
 
         return unsafe { CallNextHookEx(None, code, w_param, l_param) };
