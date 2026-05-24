@@ -53,6 +53,10 @@ Mate floats above every app. Highlight text anywhere, double-tap Control <kbd>Ct
 
 Select any text and press <kbd>Ctrl</kbd>+<kbd>Space</kbd> to instantly explain it. Mate opens (or resets if already open), captures your selection via clipboard, and automatically asks _"What is this, and what is it about?"_ — no typing required.
 
+### Inline Edit (Ctrl+Shift)
+
+Select any text in any app, then press and hold <kbd>Ctrl</kbd>+<kbd>Shift</kbd>. If you don't press any other key within 700 ms, Mate opens in **inline-edit mode** with your selection pre-loaded — ready for you to ask the AI to rewrite, improve, translate, or transform it. The 700 ms grace period lets normal <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd> shortcuts (e.g. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> in VS Code) pass through untouched.
+
 ## Why Mate?
 
 Most AI tools require accounts, API keys, or subscriptions that bill you per token. Mate is different:
@@ -68,6 +72,7 @@ Most AI tools require accounts, API keys, or subscriptions that bill you per tok
 
 - **Always available:** double-tap Control <kbd>Ctrl</kbd> to summon the overlay from any app
 - **Quick Explain:** select any text and press <kbd>Ctrl</kbd>+<kbd>Space</kbd> — Mate opens and instantly explains your selection without any extra typing
+- **Inline Edit:** select text in any app, press <kbd>Ctrl</kbd>+<kbd>Shift</kbd> and hold for 700 ms (without pressing any other key) — Mate opens in inline-edit mode with your selection ready for AI rewriting, translation, or transformation
 - **Context-aware quotes:** highlight any text, then double-tap Control <kbd>Ctrl</kbd> to open Mate with the selected text pre-filled as a quote
 - **Throwaway conversations:** fast, lightweight interactions without the overhead of a full chat app
 - **Conversation history:** persist and revisit past conversations across sessions
@@ -109,6 +114,7 @@ This port adds several Windows-native improvements on top of the original Thuki:
 | **Narrower chrome**               | Tighter padding on the overlay and chat area for a denser, more focused layout                                                                                                                                                                                                                           |
 | **Header model chip**             | Active model displayed as a compact chip in the chat header — click to switch without leaving chat                                                                                                                                                                                                       |
 | **Quick Explain (Ctrl+Space)**    | Select text anywhere, press <kbd>Ctrl</kbd>+<kbd>Space</kbd> — Mate opens and auto-submits an explain query for the selection                                                                                                                                                                            |
+| **Inline Edit (Ctrl+Shift)**      | Select text anywhere, press <kbd>Ctrl</kbd>+<kbd>Shift</kbd> and hold 700 ms — Mate opens in inline-edit mode with the selection pre-loaded. The 700 ms delay lets <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd> app shortcuts (VS Code, browsers, etc.) pass through untouched                          |
 | **Drag-to-select region capture** | Click the crosshair button in the ask bar; a fullscreen overlay opens with a crosshair cursor. Drag a rectangle over any screen area, release, and the cropped region is attached as context. Escape or right-click cancels. Works alongside `/screen` (full-screen capture) and manual image paste/drag |
 
 ## Getting Started
@@ -277,7 +283,6 @@ Mate inherits the Thuki roadmap and adds Windows-specific improvements:
 
 ### Better AI Control
 
-- **Custom activation shortcut:** change the double-tap trigger to any key or combo you prefer
 - **More online providers:** additional cloud backends beyond OpenRouter, Anthropic, and OpenAI
 
 ### Richer Context
