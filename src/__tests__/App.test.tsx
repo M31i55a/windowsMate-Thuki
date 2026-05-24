@@ -5591,4 +5591,65 @@ describe('App', () => {
       expect(invoke).toHaveBeenCalledWith('snooze_update_chat', { hours: 24 });
     });
   });
+
+  describe('inline edit mode', () => {
+    it('calls apply_inline_edit when a turn completes in inline edit mode', async () => {
+      render(<App />);
+      await act(async () => {});
+      // Show overlay with selected text so the pencil button appears.
+      await showOverlay('hello world');
+
+      // Click the pencil (Edit in place) button to activate inline edit mode.
+      const pencil = screen.getByRole('button', { name: 'Edit in place' });
+      act(() => { fireEvent.click(pencil); });
+
+      // Type a transformation instruction.
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
+      act(() => {
+        fireEvent.change(textarea, { target: { value: 'translate to Spanish' } });
+      });
+
+      // Submit.
+      act(() => {
+        fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
+      });
+      await act(async () => {});
+
+      // Simulate the model finishing.
+      act(() => {
+        getLastChannel()?.simulateMessage({ type: 'Token', data: 'hola mundo' });
+        getLastChannel()?.simulateMessage({ type: 'Done' });
+      });
+      await act(async () => {});
+
+      // apply_inline_edit should have been invoked with the model's response.
+      expect(invoke).toHaveBeenCalledWith('apply_inline_edit', {
+        newText: 'hola mundo',
+      });
+    });
+
+    it('does NOT call apply_inline_edit when inline edit mode is inactive', async () => {
+      render(<App />);
+      await act(async () => {});
+      await showOverlay('hello world');
+
+      // Do NOT click the pencil button — submit a normal query.
+      const textarea = screen.getByPlaceholderText('Ask Mate anything...');
+      act(() => {
+        fireEvent.change(textarea, { target: { value: 'what is this?' } });
+      });
+      act(() => {
+        fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
+      });
+      await act(async () => {});
+
+      act(() => {
+        getLastChannel()?.simulateMessage({ type: 'Token', data: 'some answer' });
+        getLastChannel()?.simulateMessage({ type: 'Done' });
+      });
+      await act(async () => {});
+
+      expect(invoke).not.toHaveBeenCalledWith('apply_inline_edit', expect.anything());
+    });
+  });
 });

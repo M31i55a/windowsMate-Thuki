@@ -5,7 +5,7 @@
 //! - Context capture (clipboard fallback for selected text)
 //! - Permission stubs (Windows has no TCC equivalent)
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
@@ -21,8 +21,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_CONTROL,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, GetCursorPos, GetMessageW, SetWindowsHookExW, UnhookWindowsHookEx,
-    KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL,
+    CallNextHookEx, GetCursorPos, GetForegroundWindow, GetMessageW, SetWindowsHookExW,
+    UnhookWindowsHookEx, KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL,
 };
 
 use crate::context::{ActivationContext, ScreenRect};
@@ -82,6 +82,11 @@ static LAST_CTRL_SPACE_INSTANT: LazyLock<Mutex<Option<Instant>>> =
 /// auto-explain thread compares its snapshot against the current value; if
 /// they differ a second Space arrived in time and the thread bails out.
 static CTRL_SPACE_PENDING_GEN: AtomicU64 = AtomicU64::new(0);
+
+/// HWND of the foreground window at the moment the user triggered the overlay.
+/// Captured in `capture()` before `clipboard_fallback()` changes focus, so it
+/// always refers to the text-editing application, not to Mate itself.
+pub(crate) static INLINE_EDIT_SOURCE_HWND: AtomicIsize = AtomicIsize::new(0);
 
 // ─── Activation Logic ──────────────────────────────────────────────────────────
 
@@ -364,7 +369,7 @@ fn simulate_ctrl_c() {
     }
 }
 
-fn clipboard_text() -> String {
+pub(crate) fn clipboard_text() -> String {
     unsafe {
         if OpenClipboard(None).is_err() {
             return String::new();
@@ -386,7 +391,7 @@ fn clipboard_text() -> String {
     }
 }
 
-fn write_clipboard(text: &str) {
+pub(crate) fn write_clipboard(text: &str) {
     unsafe {
         if OpenClipboard(None).is_err() {
             return;
@@ -473,6 +478,11 @@ fn get_focused_element_bounds() -> Option<ScreenRect> {
 }
 
 pub fn capture() -> ActivationContext {
+    // Store the foreground HWND before clipboard_fallback() simulates Ctrl+C,
+    // which may briefly shift focus. The stored handle is used by inline_edit
+    // to paste the AI response back into the originating application.
+    let source_hwnd = unsafe { GetForegroundWindow() };
+    INLINE_EDIT_SOURCE_HWND.store(source_hwnd.0 as isize, Ordering::SeqCst);
     let mouse = current_mouse_position();
     let text = clipboard_fallback();
     let bounds = get_focused_element_bounds();
@@ -481,6 +491,12 @@ pub fn capture() -> ActivationContext {
         bounds,
         mouse_position: Some(mouse),
     }
+}
+
+/// Returns the HWND of the foreground window captured at the last activation,
+/// or `0` if no activation has occurred yet.
+pub fn get_inline_edit_source_hwnd() -> isize {
+    INLINE_EDIT_SOURCE_HWND.load(Ordering::SeqCst)
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────────

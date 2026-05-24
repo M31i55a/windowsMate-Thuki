@@ -166,12 +166,28 @@ function App() {
       assistantMsg: Parameters<typeof persistTurn>[1],
     ) => {
       await persistTurn(userMsg, assistantMsg);
+      if (inlineEditModeRef.current) {
+        inlineEditModeRef.current = false;
+        setInlineEditMode(false);
+        void invoke<void>('apply_inline_edit', { newText: assistantMsg.content });
+      }
     },
     [persistTurn],
   );
 
   const { messages, ask, askSearch, cancel, isGenerating, reset, loadMessages, injectMessages } =
     useOllama(handleTurnComplete);
+
+  /** True when the AI response will be pasted back into the source app's text field. */
+  const [inlineEditMode, setInlineEditMode] = useState(false);
+  /**
+   * Ref mirror of `inlineEditMode` so closures (handleTurnComplete, handleSubmit)
+   * always see the current value without needing it in their dependency arrays.
+   */
+  const inlineEditModeRef = useRef(false);
+  useEffect(() => {
+    inlineEditModeRef.current = inlineEditMode;
+  }, [inlineEditMode]);
 
   const {
     speakingMessageId,
@@ -506,6 +522,7 @@ function App() {
       setQuery('');
       setSelectedContext(context);
       setIsHistoryOpen(false);
+      setInlineEditMode(false);
       setAttachedImages((prev) => {
         for (const img of prev) URL.revokeObjectURL(img.blobUrl);
         return [];
@@ -539,6 +556,7 @@ function App() {
     screenCapturePendingRef.current = false;
     screenCaptureInputSnapshotRef.current = null;
     setSelectedContext(null);
+    setInlineEditMode(false);
     setPreviewImageUrl(null);
     setAttachedImages((prev) => {
       for (const img of prev) URL.revokeObjectURL(img.blobUrl);
@@ -1318,6 +1336,22 @@ function App() {
       .slice(0, quote.maxContextLength);
     const context = sanitized?.trim() ? sanitized : undefined;
 
+    // Inline-edit fast path: the AI response will replace the selected text
+    // in the source application. We send a transformation prompt directly,
+    // bypassing images and other submit paths.
+    if (inlineEditModeRef.current && context) {
+      const promptOverride =
+        `Transform the text below according to the instruction. ` +
+        `Return ONLY the transformed text — no explanation, no preamble.\n\n` +
+        `Instruction: ${trimmedQuery}\n\nText:\n${context}`;
+      ask(trimmedQuery, undefined, undefined, hasThink || undefined, promptOverride);
+      setQuery('');
+      setSelectedContext(null);
+      /* v8 ignore next */
+      inputRef.current!.style.height = 'auto';
+      return;
+    }
+
     // If all images are ready (or there are none), submit immediately.
     const hasPendingImages = attachedImages.some(
       (img) => img.filePath === null,
@@ -1353,6 +1387,7 @@ function App() {
   }, [
     query,
     isGenerating,
+    ask,
     executeSubmit,
     handleScreenSubmit,
     askSearch,
@@ -1921,6 +1956,8 @@ function App() {
                   isDragOver={isDragOver ?? undefined}
                   onModelPickerToggle={handleModelPickerToggle}
                   isModelPickerOpen={isModelPickerOpen}
+                  inlineEditMode={inlineEditMode}
+                  onInlineEditToggle={() => { setInlineEditMode((p) => !p); }}
                 />
               </div>
 

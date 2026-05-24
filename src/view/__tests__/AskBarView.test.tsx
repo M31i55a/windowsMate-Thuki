@@ -1813,4 +1813,89 @@ describe('AskBarView', () => {
       ).not.toThrow();
     });
   });
+
+  describe('inline edit toggle button', () => {
+    const BASE_PROPS = {
+      ...IMAGE_DEFAULTS,
+      query: '',
+      setQuery: vi.fn(),
+      isChatMode: false,
+      isGenerating: false,
+      onSubmit: vi.fn(),
+      onCancel: vi.fn(),
+      inputRef: makeRef(),
+    };
+
+    it('does not render pencil button when selectedText is absent', () => {
+      render(
+        <AskBarView
+          {...BASE_PROPS}
+          onInlineEditToggle={vi.fn()}
+        />,
+      );
+      expect(screen.queryByRole('button', { name: /inline edit/i })).toBeNull();
+    });
+
+    it('does not render pencil button when onInlineEditToggle is absent', () => {
+      render(
+        <AskBarView
+          {...BASE_PROPS}
+          selectedText="hello world"
+        />,
+      );
+      expect(screen.queryByRole('button', { name: /inline edit/i })).toBeNull();
+    });
+
+    it('renders pencil button when selectedText and onInlineEditToggle are both provided', () => {
+      render(
+        <AskBarView
+          {...BASE_PROPS}
+          selectedText="hello world"
+          onInlineEditToggle={vi.fn()}
+        />,
+      );
+      expect(
+        screen.getByRole('button', { name: 'Edit in place' }),
+      ).toBeInTheDocument();
+    });
+
+    it('calls onInlineEditToggle when pencil button is clicked', () => {
+      const onInlineEditToggle = vi.fn();
+      render(
+        <AskBarView
+          {...BASE_PROPS}
+          selectedText="hello world"
+          onInlineEditToggle={onInlineEditToggle}
+        />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Edit in place' }));
+      expect(onInlineEditToggle).toHaveBeenCalledTimes(1);
+    });
+
+    it('reflects aria-pressed=false when inlineEditMode is false', () => {
+      render(
+        <AskBarView
+          {...BASE_PROPS}
+          selectedText="hello world"
+          onInlineEditToggle={vi.fn()}
+          inlineEditMode={false}
+        />,
+      );
+      const btn = screen.getByRole('button', { name: 'Edit in place' });
+      expect(btn.getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('reflects aria-pressed=true and label change when inlineEditMode is true', () => {
+      render(
+        <AskBarView
+          {...BASE_PROPS}
+          selectedText="hello world"
+          onInlineEditToggle={vi.fn()}
+          inlineEditMode={true}
+        />,
+      );
+      const btn = screen.getByRole('button', { name: 'Cancel inline edit' });
+      expect(btn.getAttribute('aria-pressed')).toBe('true');
+    });
+  });
 });

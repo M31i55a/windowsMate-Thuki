@@ -43,6 +43,8 @@ pub mod permissions;
 mod windows_permissions;
 #[cfg(target_os = "windows")]
 mod windows_screenshot;
+#[cfg(target_os = "windows")]
+mod inline_edit;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -961,6 +963,9 @@ pub fn run() {
             warmup::evict_model,
             // Search pipeline
             search::search_pipeline,
+            // Inline editing (Windows only)
+            #[cfg(all(target_os = "windows", not(coverage)))]
+            inline_edit::apply_inline_edit,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

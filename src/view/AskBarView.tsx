@@ -147,6 +147,26 @@ const REGION_ICON = (
   </svg>
 );
 
+/** Hoisted static pencil icon — toggles inline-edit mode. */
+const PENCIL_ICON = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden="true"
+  >
+    <path
+      d="M8.5 1.5L10.5 3.5L3.5 10.5H1.5V8.5L8.5 1.5Z"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
 /** Hoisted static camera icon — triggers screenshot capture. */
 const CAMERA_ICON = (
   <svg
@@ -276,6 +296,13 @@ interface AskBarViewProps {
    * True when the model picker panel is open.
    */
   isModelPickerOpen?: boolean;
+  /**
+   * When provided, a pencil button appears next to the selected-text quote
+   * so the user can toggle inline-edit mode (AI response pastes back in place).
+   */
+  onInlineEditToggle?: () => void;
+  /** Whether inline-edit mode is currently active. */
+  inlineEditMode?: boolean;
 }
 
 /**
@@ -305,6 +332,8 @@ export function AskBarView({
   isDragOver,
   onModelPickerToggle,
   isModelPickerOpen = false,
+  onInlineEditToggle,
+  inlineEditMode = false,
 }: AskBarViewProps) {
   /** Ref to the mirror div behind the textarea for command highlighting. */
   const mirrorRef = useRef<HTMLDivElement>(null);
@@ -568,8 +597,8 @@ export function AskBarView({
   return (
     <div className={`flex flex-col w-full shrink-0 ${ringClass}`}>
       {selectedText && (
-        <div className="px-4 pt-2 pb-0">
-          <p className="italic text-xs text-text-secondary select-text whitespace-pre-wrap">
+        <div className="px-4 pt-2 pb-0 flex items-start gap-2">
+          <p className="italic text-xs text-text-secondary select-text whitespace-pre-wrap flex-1">
             &ldquo;
             {formatQuotedText(
               selectedText,
@@ -578,6 +607,23 @@ export function AskBarView({
             )}
             &rdquo;
           </p>
+          {onInlineEditToggle && (
+            <Tooltip label="Edit in place" placement="top">
+              <button
+                type="button"
+                aria-label={inlineEditMode ? 'Cancel inline edit' : 'Edit in place'}
+                aria-pressed={inlineEditMode}
+                onClick={onInlineEditToggle}
+                className={`shrink-0 rounded p-0.5 transition-colors ${
+                  inlineEditMode
+                    ? 'text-primary bg-primary/20'
+                    : 'text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                {PENCIL_ICON}
+              </button>
+            </Tooltip>
+          )}
         </div>
       )}
       {showMaxLabel && (
