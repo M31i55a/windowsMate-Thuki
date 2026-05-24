@@ -190,7 +190,8 @@ impl OverlayActivator {
 fn run_hook_loop(is_active: Arc<AtomicBool>) {
     GLOBAL_HOOK_ACTIVE.store(true, Ordering::SeqCst);
 
-    let hook: Result<windows::Win32::UI::WindowsAndMessaging::HHOOK, windows::core::Error> = unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook_callback), None, 0) };
+    let hook: Result<windows::Win32::UI::WindowsAndMessaging::HHOOK, windows::core::Error> =
+        unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook_callback), None, 0) };
 
     match hook {
         Ok(hook_handle) => {
@@ -254,6 +255,11 @@ unsafe extern "system" fn keyboard_hook_callback(
 
         let mut s = GLOBAL_ACTIVATION_STATE.lock().unwrap();
         if evaluate_activation(&mut s, key_down) {
+            // The Ctrl press was consumed by the double-tap activation.
+            // Reset CTRL_HELD so a Space keypress immediately after
+            // (before the physical Ctrl-Up arrives) is not misread as
+            // Ctrl+Space / quick-explain.
+            CTRL_HELD.store(false, Ordering::SeqCst);
             let cb = GLOBAL_ON_ACTIVATION.lock().unwrap();
             if let Some(ref callback) = *cb {
                 callback();

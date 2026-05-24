@@ -121,9 +121,7 @@ pub(crate) async fn apply_inline_edit_impl(
     raw_hwnd: isize,
 ) -> Result<(), String> {
     if raw_hwnd == 0 {
-        return Err(
-            "No source window captured — open Mate from a text selection.".into(),
-        );
+        return Err("No source window captured — open Mate from a text selection.".into());
     }
     paste_to_window(new_text, raw_hwnd).await
 }
@@ -132,22 +130,14 @@ pub(crate) async fn apply_inline_edit_impl(
 /// the user invoked Mate. Hides the Mate window first so it does not compete
 /// for focus with the source application.
 #[cfg_attr(not(coverage), tauri::command)]
-pub async fn apply_inline_edit(
-    new_text: String,
-    app: tauri::AppHandle,
-) -> Result<(), String> {
+pub async fn apply_inline_edit(new_text: String, app: tauri::AppHandle) -> Result<(), String> {
     let raw_hwnd = windows_activator::get_inline_edit_source_hwnd();
     if raw_hwnd == 0 {
-        return Err(
-            "No source window captured — open Mate from a text selection.".into(),
-        );
+        return Err("No source window captured — open Mate from a text selection.".into());
     }
     // Notify the frontend so it runs its proper hide animation and updates
     // its overlay state (eventually calls notify_overlay_hidden).
-    let _ = app.emit(
-        "mate://visibility",
-        serde_json::json!({ "state": "hide" }),
-    );
+    let _ = app.emit("mate://visibility", serde_json::json!({ "state": "hide" }));
     // Also hide the native window immediately so it does not compete with
     // SetForegroundWindow on the source app side.
     if let Some(window) = app.get_webview_window("main") {
