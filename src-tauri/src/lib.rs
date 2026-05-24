@@ -792,6 +792,10 @@ pub fn run() {
                     let handle2 = app_handle_ie.clone();
                     std::thread::spawn(move || {
                         let ctx = crate::windows_activator::capture();
+                        // Only trigger inline edit when there is actually selected text.
+                        if ctx.selected_text.as_deref().unwrap_or("").trim().is_empty() {
+                            return;
+                        }
                         let _ = handle.run_on_main_thread(move || {
                             show_overlay(&handle2, ctx, false, true);
                         });
