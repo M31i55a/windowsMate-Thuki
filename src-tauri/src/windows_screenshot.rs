@@ -177,6 +177,17 @@ fn get_selection_state() -> Option<Arc<Mutex<RegionSelectionState>>> {
 static SCREENSHOT_BITMAP: std::sync::LazyLock<Mutex<Option<isize>>> =
     std::sync::LazyLock::new(|| Mutex::new(None));
 
+/// Pre-composed bitmap: the screenshot with the full-screen dark veil already
+/// alpha-blended in. Built once at capture time so WM_PAINT never calls the slow
+/// AlphaBlend per frame, which was the source of the brightness-flicker glitch.
+static VEILED_BITMAP: std::sync::LazyLock<Mutex<Option<isize>>> =
+    std::sync::LazyLock::new(|| Mutex::new(None));
+
+/// Persistent back-buffer bitmap reused across WM_PAINT calls. Compositing is
+/// done here then blitted to the screen in a single operation (double buffering).
+static BACK_BUFFER_BMP: std::sync::LazyLock<Mutex<Option<isize>>> =
+    std::sync::LazyLock::new(|| Mutex::new(None));
+
 /// Window procedure for the region selection overlay.
 ///
 /// Draws a dark tint over the entire virtual screen, and a bright
@@ -262,135 +273,124 @@ unsafe extern "system" fn region_selection_wndproc(
                 let vw = GetSystemMetrics(SM_CXVIRTUALSCREEN);
                 let vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
 
-                // 1. Render the pre-captured screenshot as the background.
-                //    Destination is (0,0) in client space (top-left of window).
-                {
-                    let guard = SCREENSHOT_BITMAP.lock().unwrap();
-                    if let Some(handle_val) = *guard {
-                        let hbmp = HBITMAP(handle_val as *mut _);
-                        let mem_dc = CreateCompatibleDC(Some(hdc));
-                        let old = SelectObject(mem_dc, hbmp.into());
-                        let _ = BitBlt(hdc, 0, 0, vw, vh, Some(mem_dc), 0, 0, SRCCOPY);
-                        SelectObject(mem_dc, old);
-                        let _ = DeleteDC(mem_dc);
-                    }
-                }
+                // Double-buffering: compose the full frame into an off-screen
+                // back buffer, then blit it to the screen in one operation.
+                // This prevents the intermediate "bright screenshot" state from
+                // being visible while AlphaBlend runs, which caused the
+                // brightness-flicker glitch reported on mouse move.
+                let back_dc = CreateCompatibleDC(Some(hdc));
+                let back_bmp_val = *BACK_BUFFER_BMP.lock().unwrap();
 
-                // 2. Convert selection screen coords to client coords.
-                //    GetCursorPos returns screen coords; subtract (vx,vy) to get
-                //    client coords because the window starts at (vx,vy) on screen.
-                let (has_sel, x1, y1, x2, y2) = if let Some(state) = get_selection_state() {
-                    let s = state.lock().unwrap();
-                    let cx1 = s.start_x.min(s.end_x) - vx;
-                    let cy1 = s.start_y.min(s.end_y) - vy;
-                    let cx2 = s.start_x.max(s.end_x) - vx;
-                    let cy2 = s.start_y.max(s.end_y) - vy;
-                    (cx2 > cx1 && cy2 > cy1, cx1, cy1, cx2, cy2)
-                } else {
-                    (false, 0, 0, 0, 0)
-                };
+                if let Some(back_handle) = back_bmp_val {
+                    let back_bmp = HBITMAP(back_handle as *mut _);
+                    let old_back = SelectObject(back_dc, back_bmp.into());
 
-                // 3. AlphaBlend a semi-transparent dark veil over non-selected areas.
-                //    All coordinates are client-space (0,0 at top-left of window).
-                let overlay_dc = CreateCompatibleDC(Some(hdc));
-                let overlay_bmp = CreateCompatibleBitmap(hdc, 1, 1);
-                let old_bmp = SelectObject(overlay_dc, overlay_bmp.into());
-                let black = CreateSolidBrush(COLORREF(0));
-                let _ = FillRect(
-                    overlay_dc,
-                    &RECT {
-                        left: 0,
-                        top: 0,
-                        right: 1,
-                        bottom: 1,
-                    },
-                    black,
-                );
-                let _ = DeleteObject(black.into());
-                let blend = BLENDFUNCTION {
-                    BlendOp: 0, // AC_SRC_OVER
-                    BlendFlags: 0,
-                    SourceConstantAlpha: 160, // ~63% dark veil
-                    AlphaFormat: 0,
-                };
+                    // 1. Blit the pre-composed (screenshot + veil) as the base.
+                    //    This is a plain BitBlt — no AlphaBlend per frame.
+                    {
+                        let guard = VEILED_BITMAP.lock().unwrap();
+                        if let Some(handle_val) = *guard {
+                            let hbmp = HBITMAP(handle_val as *mut _);
+                            let mem_dc = CreateCompatibleDC(Some(back_dc));
+                            let old = SelectObject(mem_dc, hbmp.into());
+                            let _ = BitBlt(back_dc, 0, 0, vw, vh, Some(mem_dc), 0, 0, SRCCOPY);
+                            SelectObject(mem_dc, old);
+                            let _ = DeleteDC(mem_dc);
+                        }
+                    }
 
-                if has_sel {
-                    // Veil the 4 regions surrounding the clear selection.
-                    if y1 > 0 {
-                        let _ = AlphaBlend(hdc, 0, 0, vw, y1, overlay_dc, 0, 0, 1, 1, blend);
-                    }
-                    if y2 < vh {
-                        let _ = AlphaBlend(hdc, 0, y2, vw, vh - y2, overlay_dc, 0, 0, 1, 1, blend);
-                    }
-                    if x1 > 0 {
-                        let _ = AlphaBlend(hdc, 0, y1, x1, y2 - y1, overlay_dc, 0, 0, 1, 1, blend);
-                    }
-                    if x2 < vw {
-                        let _ = AlphaBlend(
-                            hdc,
-                            x2,
-                            y1,
-                            vw - x2,
-                            y2 - y1,
-                            overlay_dc,
-                            0,
-                            0,
-                            1,
-                            1,
-                            blend,
+                    // 2. Compute selection rect in client coordinates.
+                    //    GetCursorPos returns screen coords; subtract (vx,vy).
+                    let (has_sel, x1, y1, x2, y2) = if let Some(state) = get_selection_state() {
+                        let s = state.lock().unwrap();
+                        let cx1 = s.start_x.min(s.end_x) - vx;
+                        let cy1 = s.start_y.min(s.end_y) - vy;
+                        let cx2 = s.start_x.max(s.end_x) - vx;
+                        let cy2 = s.start_y.max(s.end_y) - vy;
+                        (cx2 > cx1 && cy2 > cy1, cx1, cy1, cx2, cy2)
+                    } else {
+                        (false, 0, 0, 0, 0)
+                    };
+
+                    if has_sel {
+                        // 3. Restore the selection area: blit the raw (un-veiled)
+                        //    screenshot pixels over the dark veil region.
+                        {
+                            let guard = SCREENSHOT_BITMAP.lock().unwrap();
+                            if let Some(handle_val) = *guard {
+                                let hbmp = HBITMAP(handle_val as *mut _);
+                                let mem_dc = CreateCompatibleDC(Some(back_dc));
+                                let old = SelectObject(mem_dc, hbmp.into());
+                                let _ = BitBlt(
+                                    back_dc,
+                                    x1,
+                                    y1,
+                                    x2 - x1,
+                                    y2 - y1,
+                                    Some(mem_dc),
+                                    x1,
+                                    y1,
+                                    SRCCOPY,
+                                );
+                                SelectObject(mem_dc, old);
+                                let _ = DeleteDC(mem_dc);
+                            }
+                        }
+
+                        // 4. 2-px white border around the selected region.
+                        let border = CreateSolidBrush(COLORREF(0x00FFFFFF));
+                        let _ = FillRect(
+                            back_dc,
+                            &RECT {
+                                left: x1,
+                                top: y1,
+                                right: x2,
+                                bottom: y1 + 2,
+                            },
+                            border,
                         );
+                        let _ = FillRect(
+                            back_dc,
+                            &RECT {
+                                left: x1,
+                                top: y2 - 2,
+                                right: x2,
+                                bottom: y2,
+                            },
+                            border,
+                        );
+                        let _ = FillRect(
+                            back_dc,
+                            &RECT {
+                                left: x1,
+                                top: y1,
+                                right: x1 + 2,
+                                bottom: y2,
+                            },
+                            border,
+                        );
+                        let _ = FillRect(
+                            back_dc,
+                            &RECT {
+                                left: x2 - 2,
+                                top: y1,
+                                right: x2,
+                                bottom: y2,
+                            },
+                            border,
+                        );
+                        let _ = DeleteObject(border.into());
                     }
-                    // 2-px white border around the selected region.
-                    let border = CreateSolidBrush(COLORREF(0x00FFFFFF));
-                    let _ = FillRect(
-                        hdc,
-                        &RECT {
-                            left: x1,
-                            top: y1,
-                            right: x2,
-                            bottom: y1 + 2,
-                        },
-                        border,
-                    );
-                    let _ = FillRect(
-                        hdc,
-                        &RECT {
-                            left: x1,
-                            top: y2 - 2,
-                            right: x2,
-                            bottom: y2,
-                        },
-                        border,
-                    );
-                    let _ = FillRect(
-                        hdc,
-                        &RECT {
-                            left: x1,
-                            top: y1,
-                            right: x1 + 2,
-                            bottom: y2,
-                        },
-                        border,
-                    );
-                    let _ = FillRect(
-                        hdc,
-                        &RECT {
-                            left: x2 - 2,
-                            top: y1,
-                            right: x2,
-                            bottom: y2,
-                        },
-                        border,
-                    );
-                    let _ = DeleteObject(border.into());
-                } else {
-                    // No selection yet — veil the entire screen.
-                    let _ = AlphaBlend(hdc, 0, 0, vw, vh, overlay_dc, 0, 0, 1, 1, blend);
-                }
-                SelectObject(overlay_dc, old_bmp);
-                let _ = DeleteObject(overlay_bmp.into());
-                let _ = DeleteDC(overlay_dc);
 
+                    // 5. Copy the fully-composed frame to the screen in one shot.
+                    let _ = BitBlt(hdc, 0, 0, vw, vh, Some(back_dc), 0, 0, SRCCOPY);
+
+                    // Cleanup: deselect the bitmap but do NOT delete it — it is
+                    // pre-allocated and reused across every WM_PAINT call.
+                    SelectObject(back_dc, old_back);
+                }
+
+                let _ = DeleteDC(back_dc);
                 let _ = EndPaint(hwnd, &ps);
             }
             LRESULT(0)
@@ -458,6 +458,91 @@ pub async fn capture_screenshot_command(
         let _ = DeleteDC(mem_dc);
         let _ = ReleaseDC(None, screen_dc);
         *SCREENSHOT_BITMAP.lock().unwrap() = Some(hbmp.0 as isize);
+    }
+
+    // Pre-compose VEILED_BITMAP (screenshot + full dark veil applied once) and
+    // allocate a persistent back-buffer bitmap.  Both are reused for every
+    // WM_PAINT without any per-frame AlphaBlend call, which eliminates the
+    // brightness-flicker caused by drawing directly to the screen DC.
+    unsafe {
+        let screen_dc = GetDC(None);
+
+        // ── Veil bitmap ──────────────────────────────────────────────────────
+        let veil_dc = CreateCompatibleDC(Some(screen_dc));
+        let veil_bmp = CreateCompatibleBitmap(screen_dc, full_width as i32, full_height as i32);
+        let old_veil = SelectObject(veil_dc, veil_bmp.into());
+
+        // Blit the raw screenshot into the veil DC.
+        let shot_dc = CreateCompatibleDC(Some(screen_dc));
+        let shot_handle = *SCREENSHOT_BITMAP.lock().unwrap();
+        if let Some(h) = shot_handle {
+            let shot_bmp = HBITMAP(h as *mut _);
+            let old_shot = SelectObject(shot_dc, shot_bmp.into());
+            let _ = BitBlt(
+                veil_dc,
+                0,
+                0,
+                full_width as i32,
+                full_height as i32,
+                Some(shot_dc),
+                0,
+                0,
+                SRCCOPY,
+            );
+            SelectObject(shot_dc, old_shot);
+        }
+        let _ = DeleteDC(shot_dc);
+
+        // AlphaBlend the dark veil over it — done once here, never in WM_PAINT.
+        let ovl_dc = CreateCompatibleDC(Some(screen_dc));
+        let ovl_bmp = CreateCompatibleBitmap(screen_dc, 1, 1);
+        let old_ovl = SelectObject(ovl_dc, ovl_bmp.into());
+        let black = CreateSolidBrush(COLORREF(0));
+        let _ = FillRect(
+            ovl_dc,
+            &RECT {
+                left: 0,
+                top: 0,
+                right: 1,
+                bottom: 1,
+            },
+            black,
+        );
+        let _ = DeleteObject(black.into());
+        let blend = BLENDFUNCTION {
+            BlendOp: 0, // AC_SRC_OVER
+            BlendFlags: 0,
+            SourceConstantAlpha: 160, // ~63% dark veil
+            AlphaFormat: 0,
+        };
+        let _ = AlphaBlend(
+            veil_dc,
+            0,
+            0,
+            full_width as i32,
+            full_height as i32,
+            ovl_dc,
+            0,
+            0,
+            1,
+            1,
+            blend,
+        );
+        SelectObject(ovl_dc, old_ovl);
+        let _ = DeleteObject(ovl_bmp.into());
+        let _ = DeleteDC(ovl_dc);
+
+        SelectObject(veil_dc, old_veil);
+        let _ = DeleteDC(veil_dc);
+        *VEILED_BITMAP.lock().unwrap() = Some(veil_bmp.0 as isize);
+
+        // ── Back-buffer bitmap ────────────────────────────────────────────────
+        // Allocated once; the DC wrapping it is created/destroyed per WM_PAINT
+        // (CreateCompatibleDC is cheap — only the bitmap allocation is expensive).
+        let back_bmp = CreateCompatibleBitmap(screen_dc, full_width as i32, full_height as i32);
+        *BACK_BUFFER_BMP.lock().unwrap() = Some(back_bmp.0 as isize);
+
+        let _ = ReleaseDC(None, screen_dc);
     }
 
     // Create and run the region selection overlay on the main thread.
@@ -590,6 +675,16 @@ pub async fn capture_screenshot_command(
     // handler reads SCREENSHOT_BITMAP, so deleting it before the window
     // closes would render a blank background.
     if let Some(handle_val) = SCREENSHOT_BITMAP.lock().unwrap().take() {
+        unsafe {
+            let _ = DeleteObject(HBITMAP(handle_val as *mut _).into());
+        }
+    }
+    if let Some(handle_val) = VEILED_BITMAP.lock().unwrap().take() {
+        unsafe {
+            let _ = DeleteObject(HBITMAP(handle_val as *mut _).into());
+        }
+    }
+    if let Some(handle_val) = BACK_BUFFER_BMP.lock().unwrap().take() {
         unsafe {
             let _ = DeleteObject(HBITMAP(handle_val as *mut _).into());
         }
