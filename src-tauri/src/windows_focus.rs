@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use windows::Win32::Foundation::HWND;
-use windows::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook, UnhookWinEvent};
+use windows::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVENTHOOK};
 use windows::Win32::UI::WindowsAndMessaging::EVENT_SYSTEM_FOREGROUND;
 
 /// WINEVENT_OUTOFCONTEXT = 0x0000 — hook callback is not in-context.
@@ -15,6 +15,18 @@ const WINEVENT_OUTOFCONTEXT: u32 = 0;
 
 /// Whether the minibar mode is currently active.
 static MINIBAR_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Set to true by screenshot commands while the main window is hidden for
+/// capture. Prevents the focus-loss event from triggering minibar mode so the
+/// window restores to its full state after the capture completes.
+static SCREENSHOT_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+
+/// Suppresses or restores the minibar-on-focus-loss transition.
+/// Call with `true` before hiding the window for a screenshot, `false` after
+/// the window is shown again.
+pub fn set_screenshot_in_progress(active: bool) {
+    SCREENSHOT_IN_PROGRESS.store(active, Ordering::SeqCst);
+}
 
 /// Returns whether the minibar is currently active.
 pub fn is_minibar_active() -> bool {
@@ -74,6 +86,11 @@ unsafe extern "system" fn focus_event_callback(
     }
 
     if let Some(callback) = FOCUS_CALLBACK.as_ref() {
+        // Suppress focus-change events while a screenshot capture is in flight
+        // so the window does not enter minibar mode when hidden for the capture.
+        if SCREENSHOT_IN_PROGRESS.load(Ordering::SeqCst) {
+            return;
+        }
         callback(hwnd);
     }
 }

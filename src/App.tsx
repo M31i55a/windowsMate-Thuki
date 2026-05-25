@@ -302,11 +302,20 @@ function App() {
   const [growsUpward, setGrowsUpward] = useState(false);
 
   /**
+   * True while the user is in a live conversation (messages exist, generating,
+   * or a submit is pending). Used by AskBarView to switch its placeholder,
+   * logo size, and button visibility to "reply" mode.
+   */
+  const isReplying = messages.length > 0 || isGenerating || isSubmitPending;
+
+  /**
    * Determines whether the UI has entered "chat mode" — i.e., the morphing
    * chat window state with message bubbles. Transitions from input-bar mode
    * to chat-window mode are animated via Framer Motion `layout` prop.
+   * Also true when images are attached (e.g. after taking a screenshot) so the
+   * window expands immediately and the user can type their question right away.
    */
-  const isChatMode = messages.length > 0 || isGenerating || isSubmitPending;
+  const isChatMode = isReplying || attachedImages.length > 0;
   const { tip, tipKey, isVisible: tipVisible } = useTips(isChatMode);
 
   const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);
@@ -1942,7 +1951,7 @@ function App() {
                 <AskBarView
                   query={query}
                   setQuery={setQuery}
-                  isChatMode={isChatMode}
+                  isChatMode={isReplying}
                   isGenerating={isGenerating}
                   isSubmitPending={isSubmitPending}
                   onSubmit={handleSubmit}

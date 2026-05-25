@@ -86,6 +86,9 @@ fn capture_virtual_screen_pixels() -> Result<(i32, i32, u32, u32, Vec<u8>), Stri
 #[cfg(target_os = "windows")]
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub async fn capture_full_screen_command(app_handle: tauri::AppHandle) -> Result<String, String> {
+    // Suppress the minibar-on-focus-loss transition while the window is hidden.
+    crate::windows_focus::set_screenshot_in_progress(true);
+
     // Hide the overlay window so it's not included in the screenshot.
     let hide_handle = app_handle.clone();
     app_handle
@@ -130,6 +133,9 @@ pub async fn capture_full_screen_command(app_handle: tauri::AppHandle) -> Result
             let _ = w.set_focus();
         }
     });
+
+    // Restore the minibar-on-focus-loss transition now that the window is back.
+    crate::windows_focus::set_screenshot_in_progress(false);
 
     result
 }
@@ -407,6 +413,9 @@ pub async fn capture_screenshot_command(
 ) -> Result<Option<String>, String> {
     use windows::core::PCWSTR;
 
+    // Suppress the minibar-on-focus-loss transition while the window is hidden.
+    crate::windows_focus::set_screenshot_in_progress(true);
+
     // Hide the main window so it's not in the capture.
     let hide_handle = app_handle.clone();
     app_handle
@@ -594,6 +603,9 @@ pub async fn capture_screenshot_command(
             let _ = w.set_focus();
         }
     });
+
+    // Restore the minibar-on-focus-loss transition now that the window is back.
+    crate::windows_focus::set_screenshot_in_progress(false);
 
     let (cancelled, is_done, x1, y1, x2, y2) = {
         let s = state.lock().unwrap();
