@@ -20,7 +20,7 @@
   user-select: none;
   border: 1px solid var(--color-surface-border);
   border-top-color: rgba(255, 141, 92, 0.2);
-  border-radius: 10px;
+  border-radius: 0 0 10px 10px;
   overflow: hidden;
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
