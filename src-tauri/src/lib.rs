@@ -277,6 +277,13 @@ fn show_overlay(
     if let Some(window) = app_handle.get_webview_window("main") {
         let _ = window.set_always_on_top(true);
         let _ = window.set_skip_taskbar(true);
+        // Reset to collapsed height before showing — prevents a stale large window
+        // (left over from a previous chat session) from revealing a transparent gap
+        // below the ask-bar while the ResizeObserver races to correct the size.
+        let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize::new(
+            OVERLAY_LOGICAL_WIDTH,
+            OVERLAY_LOGICAL_HEIGHT_COLLAPSED,
+        )));
         let _ = window.show();
         let _ = window.set_focus();
 
