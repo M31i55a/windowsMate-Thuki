@@ -87,6 +87,7 @@ Most AI tools require accounts, API keys, or subscriptions that bill you per tok
 - **Slash commands:** built-in commands for live search and prompt shortcuts: `/do`, `/search`, `/screen`, `/think`, `/translate`, `/rewrite`, `/tldr`, `/refine`, `/bullets`, `/todos`. Highlight text anywhere, summon Mate, type a command, and hit Enter
 - **Extended reasoning:** type `/think` to have the model reason through a problem step by step before answering
 - **Voice output (TTS):** click the speaker icon on any assistant message to have it read aloud using Microsoft Edge Neural TTS — pick from a rich set of voices in Settings → Sound
+- **Conversation trace recorder:** optionally record every chat and `/search` session as JSON-Lines for debugging and forensics — off by default; enable from Settings or set `[debug] trace_enabled = true` in `config.toml`
 - **In-app model picker:** browse models installed in your local Ollama and switch the active model from the ask bar or chat header without opening a config file; online models from OpenRouter are listed alongside local ones
 - **Cross-model continuity:** swap models mid-conversation and Mate sanitizes history and filters capabilities (vision, thinking) to whatever the new model supports
 - **Gateway API server:** expose Mate's inference backend as a local OpenAI-compatible HTTP endpoint for use by other tools
@@ -116,6 +117,8 @@ This port adds several Windows-native improvements on top of the original Thuki:
 | **Quick Explain (Ctrl+Space)**    | Select text anywhere, press <kbd>Ctrl</kbd>+<kbd>Space</kbd> — Mate opens and auto-submits an explain query for the selection                                                                                                                                                                            |
 | **Inline Edit (Ctrl+Shift)**      | Select text anywhere, press <kbd>Ctrl</kbd>+<kbd>Shift</kbd> and hold 700 ms — Mate opens in inline-edit mode with the selection pre-loaded. The 700 ms delay lets <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd> app shortcuts (VS Code, browsers, etc.) pass through untouched                          |
 | **Drag-to-select region capture** | Click the crosshair button in the ask bar; a fullscreen overlay opens with a crosshair cursor. Drag a rectangle over any screen area, release, and the cropped region is attached as context. Escape or right-click cancels. Works alongside `/screen` (full-screen capture) and manual image paste/drag |
+| **Conversation trace recorder**   | Records every chat and `/search` session as JSON-Lines under `%APPDATA%\com.quietnode.thuki\traces\`. Off by default; toggle in Settings → About or set `[debug] trace_enabled = true` in `config.toml`                                                                                                  |
+| **Transparent-bottom fix**        | Overlay window is always reset to the collapsed height before being shown, eliminating the transparent gap that was visible at the bottom when re-opening after a previous chat session                                                                                                                  |
 
 ## Getting Started
 
