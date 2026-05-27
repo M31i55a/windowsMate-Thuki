@@ -365,7 +365,7 @@ async fn open_settings_window(app_handle: tauri::AppHandle) -> Result<(), String
 
     let window = WebviewWindowBuilder::new(&app_handle, "settings", url)
         .title("Settings — windowsMate - Thuki")
-        .inner_size(480.0, 520.0)
+        .inner_size(480.0, 500.0)
         .min_inner_size(400.0, 400.0)
         .center()
         .resizable(true)
