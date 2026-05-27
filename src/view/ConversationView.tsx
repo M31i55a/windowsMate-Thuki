@@ -258,6 +258,7 @@ export function ConversationView({
               searchSources={msg.searchSources}
               searchWarnings={msg.searchWarnings}
               sandboxUnavailable={msg.sandboxUnavailable}
+              attachedFileNames={msg.attachedFileNames}
             />
           );
         })}

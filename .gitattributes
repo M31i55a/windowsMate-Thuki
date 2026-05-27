@@ -1,0 +1,4 @@
+# Force generated docs files to always use LF line endings so the
+# commandArtifacts snapshot test passes on Windows (autocrlf=true).
+docs/commands.md text eol=lf
+src-tauri/prompts/generated/slash_commands.txt text eol=lf

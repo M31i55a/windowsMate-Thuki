@@ -25,6 +25,8 @@ export interface Message {
   quotedText?: string;
   /** Absolute file paths of images attached to this message, if any. */
   imagePaths?: string[];
+  /** Names of text files attached to this message (displayed as chips in the bubble). */
+  attachedFileNames?: string[];
   /** Present on assistant messages that represent an Ollama error callout. */
   errorKind?: OllamaErrorKind;
   /** Accumulated thinking/reasoning content from the model, if thinking mode was used. */
@@ -88,6 +90,9 @@ export function useOllama(
    *   instead of displayContent. The chat bubble still shows displayContent.
    *   Used by utility slash commands to send a composed prompt template while
    *   displaying the user's original input.
+   * @param attachedFileNames Optional display-only list of file names attached to
+   *   this message. Shown as chips in the user bubble. The actual file contents
+   *   are already baked into promptOverride by the time ask() is called.
    */
   const ask = useCallback(
     async (
@@ -96,6 +101,7 @@ export function useOllama(
       imagePaths?: string[],
       think?: boolean,
       promptOverride?: string,
+      attachedFileNames?: string[],
     ) => {
       if (
         (!displayContent.trim() && (!imagePaths || imagePaths.length === 0)) ||
@@ -110,6 +116,10 @@ export function useOllama(
         quotedText,
         imagePaths:
           imagePaths && imagePaths.length > 0 ? imagePaths : undefined,
+        attachedFileNames:
+          attachedFileNames && attachedFileNames.length > 0
+            ? attachedFileNames
+            : undefined,
       };
 
       const assistantId = crypto.randomUUID();

@@ -6,6 +6,34 @@
  * no other registration is needed.
  */
 
+/** Structured user-facing documentation for a slash command. */
+export interface CommandDocs {
+  /** One-line description of the command. */
+  readonly summary: string;
+  /** Usage pattern, e.g. `/screen [optional message]`. */
+  readonly usage: string;
+  /** 2–4 concrete usage examples shown in the docs page. */
+  readonly examples: readonly string[];
+  /** Extended behavior description for the docs page. */
+  readonly behavior: string;
+  /** If composable, describes how it combines with other commands. */
+  readonly composability?: string;
+  /** Any hard limits (file size, image count, etc.). */
+  readonly limit?: string;
+  /** Required OS-level permission, if any. */
+  readonly permission?: string;
+  /** Language format description (for /translate). */
+  readonly languageFormat?: string;
+  /** Default translation behavior when no language is specified. */
+  readonly defaultBehavior?: string;
+}
+
+/** Short hint inserted into the system-prompt slash-command appendix. */
+export interface CommandPromptHelp {
+  /** One-sentence description shown in the model's slash-command reference. */
+  readonly summary: string;
+}
+
 export interface Command {
   /** The slash trigger, e.g. "/screen". Must start with "/". */
   readonly trigger: string;
@@ -15,6 +43,10 @@ export interface Command {
   readonly description: string;
   /** Prompt template with $INPUT / $LANG placeholders. Absent for non-template commands. */
   readonly promptTemplate?: string;
+  /** Structured documentation used by the docs generator. */
+  readonly docs: CommandDocs;
+  /** Short prompt-appendix hint used by the system-prompt generator. */
+  readonly promptHelp: CommandPromptHelp;
 }
 
 export const COMMANDS: readonly Command[] = [
@@ -22,21 +54,101 @@ export const COMMANDS: readonly Command[] = [
     trigger: '/screen',
     label: '/screen',
     description: 'Capture your screen and include it as context',
+    docs: {
+      summary:
+        'Captures your screen and attaches it as context for the current message.',
+      usage: '/screen [optional message]',
+      examples: [
+        '/screen: sends a screenshot with no additional message',
+        '/screen what is this error?: attaches a screenshot and asks a question about it',
+      ],
+      behavior:
+        "The screenshot is taken when you submit the message. Mate's own window is excluded from the capture, and the image appears in your message bubble like a pasted screenshot.",
+      composability:
+        '/screen can combine with /think and utility commands. For example, /screen /rewrite captures the screen and rewrites whatever text the model can see.',
+      limit:
+        'One /screen capture per message. You may also attach up to 3 images manually for a total of 4 images per message.',
+      permission:
+        'Requires Screen Recording permission. If denied, Mate cannot capture the screen until access is granted in System Settings.',
+    },
+    promptHelp: { summary: 'capture current screen and attach it as image context.' },
   },
   {
     trigger: '/do',
     label: '/do',
     description: 'Agent mode: autonomously control your desktop',
+    docs: {
+      summary: 'Activates agent mode to autonomously execute desktop tasks.',
+      usage: '/do <task>',
+      examples: [
+        '/do open the terminal and list files: executes the task using desktop control',
+        '/do take a screenshot and describe what you see: chains screen capture with reasoning',
+      ],
+      behavior:
+        "Routes the message through Mate's local agent pipeline. The agent plans and executes multi-step desktop actions.",
+    },
+    promptHelp: {
+      summary: 'activate agent mode to autonomously execute desktop tasks.',
+    },
   },
   {
     trigger: '/think',
     label: '/think',
     description: 'Think deeply before answering',
+    docs: {
+      summary: 'Enables extended reasoning before the model responds.',
+      usage: '/think [optional message or highlighted text]',
+      examples: [
+        '/think with highlighted text: reasons through the selected content',
+        '/think what are the tradeoffs of a monorepo vs polyrepo?: asks a question with deep reasoning enabled',
+      ],
+      behavior:
+        "A collapsible Thinking block appears above the response showing the model's reasoning chain. The final answer appears below it as normal.",
+      composability:
+        '/think works with /screen and all utility commands. For example, /think /tldr summarizes with extended reasoning enabled.',
+    },
+    promptHelp: { summary: 'enable extended reasoning before answering.' },
   },
   {
     trigger: '/search',
     label: '/search',
     description: 'Agentic web search: iterative reasoning & cited synthesis',
+    docs: {
+      summary:
+        'Runs agentic web search and answers from live sources with citations.',
+      usage: '/search <question>',
+      examples: [
+        '/search who owns Figma now?: searches live sources for a current answer',
+        '/search latest React 19 release notes: retrieves recent release information from the web',
+      ],
+      behavior:
+        "Routes the message through Mate's local search pipeline instead of plain chat. Answers are grounded in retrieved web sources and typically include inline citations plus a Sources footer.",
+      limit:
+        'Requires the search sandbox to be running. Use it for current, changing, or cutoff-sensitive information.',
+    },
+    promptHelp: {
+      summary: 'agentic web search for current or cutoff-sensitive questions.',
+    },
+  },
+  {
+    trigger: '/file',
+    label: '/file',
+    description: 'Attach a text file and send its contents to the model',
+    docs: {
+      summary:
+        'Attaches a text file and sends its contents to the model as context.',
+      usage: '/file [optional message]',
+      examples: [
+        "/file: opens a file picker and sends the selected file's contents",
+        '/file explain this: attaches a file and asks the model to explain it',
+      ],
+      behavior:
+        "Opens a native file picker when submitted. The selected file's text content is read and included with your message as context. You can also drag and drop text files anywhere in the window.",
+      limit: 'Text files only. Maximum 1 MB per file, up to 5 files per message.',
+    },
+    promptHelp: {
+      summary: 'attach a text file and send its contents as context.',
+    },
   },
   {
     trigger: '/translate',
@@ -44,6 +156,24 @@ export const COMMANDS: readonly Command[] = [
     description: 'Translate text to another language',
     promptTemplate:
       'You are a translation assistant. Translate the following text to the specified target language. The user may specify the target language by its full name (e.g., "Vietnamese"), ISO code (e.g., "vi", "vie"), abbreviation, or informal shorthand. Interpret the language identifier flexibly and use your best judgment. If no target language is specified: translate to English if the text is non-English, or to Vietnamese if it is already in English. Output only the translation with no commentary or explanation.\n\nTarget language: $LANG\n\nText: $INPUT',
+    docs: {
+      summary: 'Translates text to another language.',
+      usage: '/translate [language] [text] or /translate with highlighted text',
+      examples: [
+        '/translate with highlighted text: auto-detects the source language and translates it',
+        '/translate ja with highlighted text: translates highlighted text to Japanese',
+        '/translate Spanish meeting notes here: translates typed text to Spanish',
+      ],
+      behavior:
+        'Outputs only the translation with no commentary or explanation.',
+      languageFormat:
+        'The target language can be a full name (`French`), ISO code (`fr`, `fra`), or common shorthand.',
+      defaultBehavior:
+        'If no language is specified, non-English input translates to English and English input translates to Vietnamese.',
+    },
+    promptHelp: {
+      summary: 'translate selected or typed text to requested language.',
+    },
   },
   {
     trigger: '/rewrite',
@@ -51,6 +181,17 @@ export const COMMANDS: readonly Command[] = [
     description: 'Rewrite text for clarity and flow',
     promptTemplate:
       'Please help rewrite the text below so it reads naturally and smoothly. Make it clear, easy to understand, and easy to follow. No icons, no em dashes. Please output only the rewritten text.\n\nText: $INPUT',
+    docs: {
+      summary: 'Rewrites text to read more naturally and clearly.',
+      usage: '/rewrite [text] or /rewrite with highlighted text',
+      examples: [
+        '/rewrite with highlighted text: rewrites the selected text',
+        '/rewrite so basically what happened was i was trying to fix the bug: rewrites typed text for clarity',
+      ],
+      behavior:
+        'Preserves the original meaning while improving flow and readability. Outputs only the rewritten text.',
+    },
+    promptHelp: { summary: 'rewrite text for clarity and flow.' },
   },
   {
     trigger: '/tldr',
@@ -58,6 +199,17 @@ export const COMMANDS: readonly Command[] = [
     description: 'Summarize text in 1-3 sentences',
     promptTemplate:
       "Summarize the following text into a TL;DR. Capture the core message in 1-3 short, direct sentences. Focus on what matters most: the main point, the key decision, or the critical takeaway. Skip background details, qualifications, and anything that isn't essential to understanding the gist. Output only the summary.\n\nText: $INPUT",
+    docs: {
+      summary: 'Summarizes text into 1-3 short, direct sentences.',
+      usage: '/tldr [text] or /tldr with highlighted text',
+      examples: [
+        '/tldr with highlighted text: summarizes the selected content',
+        '/tldr [paste a long article]: summarizes typed or pasted text',
+      ],
+      behavior:
+        'Captures the core message, key decision, or critical takeaway. Skips background detail and qualifications.',
+    },
+    promptHelp: { summary: 'summarize text in 1-3 short direct sentences.' },
   },
   {
     trigger: '/refine',
@@ -65,6 +217,21 @@ export const COMMANDS: readonly Command[] = [
     description: 'Fix grammar, spelling, and punctuation',
     promptTemplate:
       'Refine the following text by correcting grammar, spelling, punctuation, and awkward phrasing. Keep the original tone, voice, and meaning intact. Do not restructure paragraphs, add new ideas, or remove content. If a sentence is grammatically correct but stylistically rough, smooth it lightly without changing the intent. Output only the refined text.\n\nText: $INPUT',
+    docs: {
+      summary:
+        'Fixes grammar, spelling, and punctuation while preserving your voice.',
+      usage: '/refine [text] or /refine with highlighted text',
+      examples: [
+        '/refine with highlighted text: corrects the selected text',
+        '/refine hey just wanted to follow up on the thing we discussed: cleans up typed text',
+      ],
+      behavior:
+        'Corrects errors and smooths rough phrasing without restructuring or adding new ideas. Your original tone and meaning stay intact.',
+    },
+    promptHelp: {
+      summary:
+        'fix grammar, spelling, punctuation, and rough phrasing while preserving tone.',
+    },
   },
   {
     trigger: '/bullets',
@@ -72,6 +239,17 @@ export const COMMANDS: readonly Command[] = [
     description: 'Extract key points as a bullet list',
     promptTemplate:
       'Extract the key points from the following text as a bulleted list. Each item must begin with "- " (a hyphen followed by a space). Do not use numbered lists, plain paragraphs, headers, or any other formatting. Output only the bulleted list, nothing else.\n\nExample output format:\n- First key point\n- Second key point\n- Third key point\n\nEach bullet should be a concise, self-contained statement. Order by importance or logical sequence. Leave out filler and repetition.\n\nText: $INPUT',
+    docs: {
+      summary: 'Extracts key points from text as a markdown bullet list.',
+      usage: '/bullets [text] or /bullets with highlighted text',
+      examples: [
+        '/bullets with highlighted text: extracts key points from the selection',
+        '/bullets [paste meeting notes]: extracts key points from typed or pasted content',
+      ],
+      behavior:
+        'Each point is a concise, self-contained statement. Ordered by importance or logical sequence. Filler and repetition are removed. Output uses `- ` prefixed markdown bullets.',
+    },
+    promptHelp: { summary: 'extract key points as markdown bullets.' },
   },
   {
     trigger: '/todos',
@@ -79,6 +257,20 @@ export const COMMANDS: readonly Command[] = [
     description: 'Extract to-do items as a checkbox list',
     promptTemplate:
       'Read the following text and respond in two parts:\n\n**Part 1: Summary.** Write a short paragraph (3-5 sentences) explaining what this text is about. Cover: what the situation or topic is, who is involved, what the current state is, and why it matters or what is at stake. This should give someone who has not read the original text a clear picture of the context.\n\n**Part 2: To-dos.** List every task, action item, commitment, and follow-up from the text as a markdown checkbox list. Every single item MUST begin with "- [ ] " (hyphen, space, open bracket, space, close bracket, space). Do not use numbered lists, plain bullets, headers, or any other format for the list items.\n\nSeparate the two parts with a blank line. Do not add any headings or labels like "Summary:" or "To-dos:"; just write the paragraph, then the list.\n\nExample output format:\nThis is a paragraph explaining what the text is about, who is involved, and what the situation is. It gives enough context to understand why the tasks matter. It is clear and direct.\n\n- [ ] First task to complete\n- [ ] Second task to complete\n- [ ] Third task to complete\n\nFor each to-do item, include who is responsible (if mentioned), what needs to be done, and any deadline or timeframe (if mentioned). Order by urgency or sequence when possible.\n\nText: $INPUT',
+    docs: {
+      summary:
+        'Summarizes what a piece of text is about, then extracts every task, action item, and commitment as a markdown checkbox list.',
+      usage: '/todos [text] or /todos with highlighted text',
+      examples: [
+        '/todos with highlighted text: summarizes and extracts to-dos from the selected text',
+        '/todos [paste a conversation or notes]: processes typed or pasted content',
+      ],
+      behavior:
+        'Responds in two parts: a short paragraph explaining the context and what is at stake, followed by a `- [ ]` checkbox list of all tasks. Each to-do includes who is responsible, plus any deadline or timeframe if mentioned.',
+    },
+    promptHelp: {
+      summary: 'summarize context and extract tasks as markdown checkboxes.',
+    },
   },
 ] as const;
 

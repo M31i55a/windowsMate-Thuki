@@ -64,6 +64,16 @@ describe('COMMANDS registry', () => {
     expect(think?.description.length).toBeGreaterThan(0);
   });
 
+  it('includes the /file command', () => {
+    const cmd = COMMANDS.find((c: Command) => c.trigger === '/file');
+    expect(cmd).toBeDefined();
+    expect(cmd?.label).toBe('/file');
+    expect(cmd?.description.length).toBeGreaterThan(0);
+    expect(cmd?.docs.summary).toContain('text file');
+    expect(cmd?.docs.limit).toBeDefined();
+    expect(cmd?.promptHelp.summary).toBeDefined();
+  });
+
   it('includes the /translate command', () => {
     const cmd = COMMANDS.find((c: Command) => c.trigger === '/translate');
     expect(cmd).toBeDefined();

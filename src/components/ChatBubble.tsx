@@ -106,6 +106,8 @@ interface ChatBubbleProps {
   searchWarnings?: SearchWarning[];
   /** Whether the search sandbox was unreachable. */
   sandboxUnavailable?: boolean;
+  /** Names of text files attached to this message, shown as chips in the user bubble. */
+  attachedFileNames?: string[];
 }
 
 /**
@@ -158,6 +160,7 @@ export function ChatBubble({
   searchSources,
   searchWarnings,
   sandboxUnavailable,
+  attachedFileNames,
 }: ChatBubbleProps) {
   const isUser = role === 'user';
 
@@ -181,6 +184,39 @@ export function ChatBubble({
                   quote.maxDisplayChars,
                 )}
               </p>
+            )}
+            {attachedFileNames && attachedFileNames.length > 0 && (
+              <div className="flex flex-wrap gap-1 mb-2">
+                {attachedFileNames.map((name) => (
+                  <span
+                    key={name}
+                    className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-white/10 text-white/70 font-mono"
+                  >
+                    <svg
+                      width="10"
+                      height="12"
+                      viewBox="0 0 10 12"
+                      fill="none"
+                      aria-hidden="true"
+                      className="shrink-0 opacity-60"
+                    >
+                      <path
+                        d="M1 1h5.5L9 3.5V11H1V1z"
+                        stroke="currentColor"
+                        strokeWidth="1"
+                        strokeLinejoin="round"
+                      />
+                      <path
+                        d="M5.5 1v3H9"
+                        stroke="currentColor"
+                        strokeWidth="1"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    {name}
+                  </span>
+                ))}
+              </div>
             )}
             {imagePaths && imagePaths.length > 0 && onImagePreview && (
               <div className="mb-2">

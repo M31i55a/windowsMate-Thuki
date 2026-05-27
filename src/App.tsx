@@ -34,6 +34,8 @@ import { HistoryPanel } from './components/HistoryPanel';
 import { ImagePreviewModal } from './components/ImagePreviewModal';
 import type { AttachedImage } from './types/image';
 import { MAX_IMAGE_SIZE_BYTES } from './types/image';
+import type { AttachedFile } from './types/file';
+import { MAX_TEXT_FILE_SIZE_BYTES, MAX_TEXT_FILES } from './types/file';
 import { quote } from './config';
 import {
   COMMANDS,
@@ -208,6 +210,11 @@ function App() {
   /** Images attached to the current (unsent) message. Blob URLs render
    *  immediately; file paths are set asynchronously after Rust processing. */
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
+  /** Text files attached to the current (unsent) message. Content is populated
+   *  asynchronously once the browser's FileReader finishes reading the file. */
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  /** Ref to the hidden file input element used by the /file command picker. */
+  const fileInputRef = useRef<HTMLInputElement>(null);
   /** URL of the image currently open in the preview modal (blob or asset URL). */
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   /**
@@ -315,7 +322,7 @@ function App() {
    * Also true when images are attached (e.g. after taking a screenshot) so the
    * window expands immediately and the user can type their question right away.
    */
-  const isChatMode = isReplying || attachedImages.length > 0;
+  const isChatMode = isReplying || attachedImages.length > 0 || attachedFiles.length > 0;
   const { tip, tipKey, isVisible: tipVisible } = useTips(isChatMode);
 
   const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);
@@ -539,6 +546,7 @@ function App() {
         for (const img of prev) URL.revokeObjectURL(img.blobUrl);
         return [];
       });
+      setAttachedFiles([]);
       pendingSubmitRef.current = null;
       screenCapturePendingRef.current = false;
       screenCaptureInputSnapshotRef.current = null;
@@ -574,6 +582,7 @@ function App() {
       for (const img of prev) URL.revokeObjectURL(img.blobUrl);
       return [];
     });
+    setAttachedFiles([]);
     setOverlayState((currentState) => {
       if (currentState === 'hidden' || currentState === 'hiding') {
         return currentState;
@@ -810,6 +819,7 @@ function App() {
       for (const img of prev) URL.revokeObjectURL(img.blobUrl);
       return [];
     });
+    setAttachedFiles([]);
     pendingSubmitRef.current = null;
     screenCapturePendingRef.current = false;
     screenCaptureInputSnapshotRef.current = null;
@@ -896,9 +906,56 @@ function App() {
   }, []);
 
   /**
+   * Handles newly attached text files. Reads them with FileReader.readAsText
+   * and stores their content in the attachedFiles state for inclusion in the
+   * next submitted message.
+   */
+  const handleTextFilesAttached = useCallback((files: File[]) => {
+    const candidates = files
+      .filter((f) => !f.type.startsWith('image/') && f.size <= MAX_TEXT_FILE_SIZE_BYTES)
+      .slice(0, MAX_TEXT_FILES);
+    if (candidates.length === 0) return;
+
+    const newFiles: AttachedFile[] = candidates.map((f) => ({
+      id: crypto.randomUUID(),
+      name: f.name,
+      content: null,
+    }));
+
+    setAttachedFiles((prev) => {
+      const remaining = MAX_TEXT_FILES - prev.length;
+      return [...prev, ...newFiles.slice(0, remaining)];
+    });
+
+    for (let i = 0; i < candidates.length; i++) {
+      const file = candidates[i];
+      const fileId = newFiles[i].id;
+      const reader = new FileReader();
+      reader.onload = () => {
+        setAttachedFiles((prev) =>
+          prev.map((af) =>
+            af.id === fileId
+              ? { ...af, content: reader.result as string }
+              : af,
+          ),
+        );
+      };
+      reader.onerror = () => {
+        // Remove the file if reading fails.
+        setAttachedFiles((prev) => prev.filter((af) => af.id !== fileId));
+      };
+      reader.readAsText(file);
+    }
+  }, []);
+
+  /** Removes an attached text file chip from state. */
+  const handleFileRemove = useCallback((id: string) => {
+    setAttachedFiles((prev) => prev.filter((f) => f.id !== id));
+  }, []);
+
+  /**
    * Root-level drag handlers. Attached to the `h-screen w-screen` root div so
    * file drops anywhere in the window are intercepted, including the
-   * ConversationView area, which has no drop handlers of its own. Without this,
    * the WebView navigates to display the dropped image full-screen when the user
    * drops a second image after the first conversation turn.
    *
@@ -909,9 +966,11 @@ function App() {
     (e: React.DragEvent) => {
       e.preventDefault();
       if (isGenerating || isSubmitPending) return;
-      setIsDragOver(attachedImages.length >= MAX_IMAGES ? 'max' : 'normal');
+      const atImageMax = attachedImages.length >= MAX_IMAGES;
+      const atFileMax = attachedFiles.length >= MAX_TEXT_FILES;
+      setIsDragOver(atImageMax && atFileMax ? 'max' : 'normal');
     },
-    [isGenerating, isSubmitPending, attachedImages.length],
+    [isGenerating, isSubmitPending, attachedImages.length, attachedFiles.length],
   );
 
   const handleRootDragLeave = useCallback((e: React.DragEvent) => {
@@ -932,24 +991,32 @@ function App() {
       if (isGenerating || isSubmitPending) return;
       const files = e.dataTransfer?.files;
       if (!files) return;
-      const remaining = MAX_IMAGES - attachedImages.length;
-      if (remaining <= 0) return;
-      const accepted: File[] = [];
-      for (let i = 0; i < files.length && accepted.length < remaining; i++) {
-        if (
-          files[i].type.startsWith('image/') &&
-          files[i].size <= MAX_IMAGE_SIZE_BYTES
-        ) {
-          accepted.push(files[i]);
+
+      const imageFiles: File[] = [];
+      const textFiles: File[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        if (f.type.startsWith('image/') && f.size <= MAX_IMAGE_SIZE_BYTES) {
+          imageFiles.push(f);
+        } else if (!f.type.startsWith('image/') && f.size <= MAX_TEXT_FILE_SIZE_BYTES) {
+          textFiles.push(f);
         }
       }
-      if (accepted.length > 0) handleImagesAttached(accepted);
+
+      const remainingImages = MAX_IMAGES - attachedImages.length;
+      if (remainingImages > 0 && imageFiles.length > 0) {
+        handleImagesAttached(imageFiles.slice(0, remainingImages));
+      }
+      if (textFiles.length > 0) {
+        handleTextFilesAttached(textFiles);
+      }
     },
     [
       isGenerating,
       isSubmitPending,
       attachedImages.length,
       handleImagesAttached,
+      handleTextFilesAttached,
     ],
   );
 
@@ -1149,7 +1216,7 @@ function App() {
 
   const handleSubmit = useCallback(() => {
     if (
-      (query.trim().length === 0 && attachedImages.length === 0) ||
+      (query.trim().length === 0 && attachedImages.length === 0 && attachedFiles.length === 0) ||
       isGenerating
     )
       return;
@@ -1243,6 +1310,52 @@ function App() {
     if (hasScreen) {
       // Fire-and-forget: the async path handles cleanup and ask() invocation.
       void handleScreenSubmit(trimmedQuery, hasThink);
+      return;
+    }
+
+    if (found.has('/file') && attachedFiles.length === 0) {
+      // No files attached yet — open the native file picker.
+      // The input's onChange handler will attach the chosen files as chips.
+      // The query is preserved so the user can submit again with their question.
+      fileInputRef.current?.click();
+      return;
+    }
+
+    if (attachedFiles.length > 0) {
+      // Build a prompt that embeds every file's content followed by the user's
+      // typed message (if any). Strip the /file trigger from the display text.
+      const { strippedMessage: strippedForFiles } = parseCommands(trimmedQuery);
+      // eslint-disable-next-line no-control-regex
+      const CONTROL_CHARS = /[\x00-\x08\x0b\x0c\x0e-\x1f]/g;
+      const sanitizedCtx = selectedContext
+        ?.replace(CONTROL_CHARS, '')
+        .slice(0, quote.maxContextLength);
+      const context = sanitizedCtx?.trim() ? sanitizedCtx : undefined;
+
+      const readyFiles = attachedFiles.filter((f) => f.content !== null);
+      if (readyFiles.length === 0) return; // All files still loading — skip.
+
+      const fileContext = readyFiles
+        .map((f) => `**File: ${f.name}**\n\`\`\`\n${f.content}\n\`\`\``)
+        .join('\n\n');
+      const promptOverride = strippedForFiles
+        ? `${fileContext}\n\n${strippedForFiles}`
+        : fileContext;
+      const fileNames = readyFiles.map((f) => f.name);
+
+      void ask(
+        trimmedQuery,
+        context,
+        undefined,
+        hasThink || undefined,
+        promptOverride,
+        fileNames,
+      );
+      setSelectedContext(null);
+      setQuery('');
+      setAttachedFiles([]);
+      /* v8 ignore next */
+      inputRef.current!.style.height = 'auto';
       return;
     }
 
@@ -1406,6 +1519,7 @@ function App() {
     selectedContext,
     setSelectedContext,
     attachedImages,
+    attachedFiles,
     setCaptureError,
     setCapabilityConflicts,
     modelSelection.active,
@@ -1972,6 +2086,24 @@ function App() {
                   isModelPickerOpen={isModelPickerOpen}
                   inlineEditMode={inlineEditMode}
                   onInlineEditToggle={() => { setInlineEditMode((p) => !p); }}
+                  attachedFiles={isSubmitPending ? [] : attachedFiles}
+                  onFileRemove={handleFileRemove}
+                />
+                {/* Hidden file input for /file command picker */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept=".txt,.md,.csv,.json,.ts,.tsx,.js,.jsx,.py,.rs,.go,.java,.c,.cpp,.h,.xml,.yaml,.yml,.toml,.html,.css,.sh,.bat,.ps1,.sql,.rb,.php,.swift,.kt,.cs,.r,.tex"
+                  aria-hidden="true"
+                  tabIndex={-1}
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files ?? []);
+                    if (files.length > 0) handleTextFilesAttached(files);
+                    // Reset so the same file can be re-selected next time.
+                    e.target.value = '';
+                  }}
                 />
               </div>
 

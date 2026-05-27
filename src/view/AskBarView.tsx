@@ -9,6 +9,7 @@ import { Tooltip } from '../components/Tooltip';
 import { ModelPicker } from '../components/ModelPicker';
 import type { AttachedImage } from '../types/image';
 import { MAX_IMAGE_SIZE_BYTES } from '../types/image';
+import type { AttachedFile } from '../types/file';
 import { COMMANDS } from '../config/commands';
 
 /**
@@ -302,8 +303,10 @@ interface AskBarViewProps {
    */
   onInlineEditToggle?: () => void;
   /** Whether inline-edit mode is currently active. */
-  inlineEditMode?: boolean;
-}
+  inlineEditMode?: boolean;  /** Text files currently attached to the unsent message. */
+  attachedFiles?: AttachedFile[];
+  /** Called when the user removes an attached file chip by ID. */
+  onFileRemove?: (id: string) => void;}
 
 /**
  * Renders the persistent bottom input bar of the application.
@@ -334,6 +337,8 @@ export function AskBarView({
   isModelPickerOpen = false,
   onInlineEditToggle,
   inlineEditMode = false,
+  attachedFiles = [],
+  onFileRemove,
 }: AskBarViewProps) {
   /** Ref to the mirror div behind the textarea for command highlighting. */
   const mirrorRef = useRef<HTMLDivElement>(null);
@@ -341,7 +346,7 @@ export function AskBarView({
   /** True when the UI should be locked — either generating or waiting for images. */
   const isBusy = isGenerating || isSubmitPending;
   const canSubmit =
-    (query.trim().length > 0 || attachedImages.length > 0) && !isBusy;
+    (query.trim().length > 0 || attachedImages.length > 0 || attachedFiles.length > 0) && !isBusy;
   const isAtMaxImages = attachedImages.length >= MAX_IMAGES;
 
   /** True briefly after a paste attempt is rejected because max images reached. */
@@ -641,6 +646,51 @@ export function AskBarView({
             onRemove={onImageRemove}
             size={56}
           />
+        </div>
+      )}
+      {attachedFiles.length > 0 && (
+        <div className="px-4 pt-2 pb-0 flex flex-wrap gap-1.5">
+          {attachedFiles.map((file) => (
+            <span
+              key={file.id}
+              className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-white/10 text-white/70 font-mono"
+            >
+              <svg
+                width="10"
+                height="12"
+                viewBox="0 0 10 12"
+                fill="none"
+                aria-hidden="true"
+                className="shrink-0 opacity-60"
+              >
+                <path
+                  d="M1 1h5.5L9 3.5V11H1V1z"
+                  stroke="currentColor"
+                  strokeWidth="1"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M5.5 1v3H9"
+                  stroke="currentColor"
+                  strokeWidth="1"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              {file.name}
+              {onFileRemove && (
+                <button
+                  type="button"
+                  aria-label={`Remove ${file.name}`}
+                  onClick={() => onFileRemove(file.id)}
+                  className="ml-0.5 opacity-60 hover:opacity-100 cursor-pointer"
+                >
+                  <svg width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden="true">
+                    <path d="M1 1l6 6M7 1L1 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
+                </button>
+              )}
+            </span>
+          ))}
         </div>
       )}
       {/* Command suggestion renders above the input row in the normal DOM

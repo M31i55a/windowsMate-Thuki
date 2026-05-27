@@ -15,22 +15,6 @@ Commands that operate on text follow a consistent input priority:
 This means you can highlight text anywhere on screen, summon Mate with Ctrl+Space, type a command, and hit Enter without retyping the selected content.
 
 
-## /search
-
-Runs agentic web search and answers from live sources with citations.
-
-**Usage:** `/search <question>`
-
-**Examples:**
-- /search who owns Figma now?: searches live sources for a current answer
-- /search latest React 19 release notes: retrieves recent release information from the web
-
-**Behavior:** Routes the message through Mate's local search pipeline instead of plain chat. Answers are grounded in retrieved web sources and typically include inline citations plus a Sources footer.
-
-**Limit:** Requires the search sandbox to be running. Use it for current, changing, or cutoff-sensitive information.
-
----
-
 ## /screen
 
 Captures your screen and attaches it as context for the current message.
@@ -78,6 +62,38 @@ Enables extended reasoning before the model responds.
 **Behavior:** A collapsible Thinking block appears above the response showing the model's reasoning chain. The final answer appears below it as normal.
 
 **Composable:** /think works with /screen and all utility commands. For example, /think /tldr summarizes with extended reasoning enabled.
+
+---
+
+## /search
+
+Runs agentic web search and answers from live sources with citations.
+
+**Usage:** `/search <question>`
+
+**Examples:**
+- /search who owns Figma now?: searches live sources for a current answer
+- /search latest React 19 release notes: retrieves recent release information from the web
+
+**Behavior:** Routes the message through Mate's local search pipeline instead of plain chat. Answers are grounded in retrieved web sources and typically include inline citations plus a Sources footer.
+
+**Limit:** Requires the search sandbox to be running. Use it for current, changing, or cutoff-sensitive information.
+
+---
+
+## /file
+
+Attaches a text file and sends its contents to the model as context.
+
+**Usage:** `/file [optional message]`
+
+**Examples:**
+- /file: opens a file picker and sends the selected file's contents
+- /file explain this: attaches a file and asks the model to explain it
+
+**Behavior:** Opens a native file picker when submitted. The selected file's text content is read and included with your message as context. You can also drag and drop text files anywhere in the window.
+
+**Limit:** Text files only. Maximum 1 MB per file, up to 5 files per message.
 
 ---
 
