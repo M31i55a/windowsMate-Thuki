@@ -22,8 +22,8 @@
   border-top-color: rgba(255, 141, 92, 0.2);
   border-radius: 0 0 10px 10px;
   overflow: hidden;
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: url(#glass-distort) blur(8px);
+  -webkit-backdrop-filter: url(#glass-distort) blur(8px);
 }
 
 .window::before {
@@ -440,7 +440,7 @@
 
 .dialogBackdrop {
   position: fixed; inset: 0; background: rgba(0,0,0,0.55);
-  backdrop-filter: blur(8px); display: flex; align-items: center;
+  backdrop-filter: url(#glass-distort) blur(8px); display: flex; align-items: center;
   justify-content: center; z-index: 1000;
 }
 .dialog {
