@@ -40,11 +40,11 @@ pub mod context;
 pub mod permissions;
 
 #[cfg(target_os = "windows")]
+mod inline_edit;
+#[cfg(target_os = "windows")]
 mod windows_permissions;
 #[cfg(target_os = "windows")]
 mod windows_screenshot;
-#[cfg(target_os = "windows")]
-mod inline_edit;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -365,7 +365,7 @@ async fn open_settings_window(app_handle: tauri::AppHandle) -> Result<(), String
 
     let window = WebviewWindowBuilder::new(&app_handle, "settings", url)
         .title("Settings — windowsMate - Thuki")
-        .inner_size(480.0, 600.0)
+        .inner_size(480.0, 520.0)
         .min_inner_size(400.0, 400.0)
         .center()
         .resizable(true)
@@ -599,7 +599,12 @@ fn finish_onboarding(
                 let _ = window.set_always_on_top(true);
                 let _ = window.set_skip_taskbar(true);
             }
-            show_overlay(&handle, crate::context::ActivationContext::empty(), false, false);
+            show_overlay(
+                &handle,
+                crate::context::ActivationContext::empty(),
+                false,
+                false,
+            );
         });
     }
 
@@ -608,7 +613,12 @@ fn finish_onboarding(
     {
         let handle = app_handle.clone();
         let _ = app_handle.run_on_main_thread(move || {
-            show_overlay(&handle, crate::context::ActivationContext::empty(), false, false);
+            show_overlay(
+                &handle,
+                crate::context::ActivationContext::empty(),
+                false,
+                false,
+            );
         });
     }
 
@@ -734,7 +744,12 @@ pub fn run() {
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => {
-                        show_overlay(app, crate::context::ActivationContext::empty(), false, false);
+                        show_overlay(
+                            app,
+                            crate::context::ActivationContext::empty(),
+                            false,
+                            false,
+                        );
                     }
                     "quit" => {
                         app.state::<crate::commands::GenerationState>().cancel();
