@@ -1756,48 +1756,6 @@ function App() {
       onDrop={handleRootDrop}
       className={`flex flex-col items-center ${growsUpward ? 'justify-end' : 'justify-start'} h-screen w-screen p-0 bg-transparent overflow-visible`}
     >
-      {/* Glass distortion shader — feTurbulence generates a Perlin noise field on
-          the GPU; feDisplacementMap uses it to warp the backdrop pixels, giving a
-          rippled refraction look instead of a plain Gaussian blur. The <animate>
-          slowly drifts the noise frequency so the distortion flows without any
-          JavaScript timers or React re-renders. */}
-      <svg
-        style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }}
-        aria-hidden="true"
-      >
-        <defs>
-          <filter
-            id="glass-distort"
-            x="-10%"
-            y="-10%"
-            width="120%"
-            height="120%"
-            colorInterpolationFilters="sRGB"
-          >
-            <feTurbulence
-              type="fractalNoise"
-              baseFrequency="0.012 0.016"
-              numOctaves="4"
-              seed="5"
-              result="noise"
-            >
-              <animate
-                attributeName="baseFrequency"
-                values="0.012 0.016;0.016 0.012;0.012 0.016"
-                dur="25s"
-                repeatCount="indefinite"
-              />
-            </feTurbulence>
-            <feDisplacementMap
-              in="SourceGraphic"
-              in2="noise"
-              scale="22"
-              xChannelSelector="R"
-              yChannelSelector="G"
-            />
-          </filter>
-        </defs>
-      </svg>
       <AnimatePresence mode="wait">
         {shouldRenderOverlay ? (
           <motion.div
@@ -1825,8 +1783,8 @@ function App() {
                   transition:
                     'height 0.35s cubic-bezier(0.16, 1, 0.3, 1), min-height 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
                   background: `rgba(32,32,32,var(--app-bg-opacity, 0.92))`,
-                  backdropFilter: 'url(#glass-distort) blur(var(--chat-bg-blur, 10px))',
-                  WebkitBackdropFilter: 'url(#glass-distort) blur(var(--chat-bg-blur, 10px))',
+                  backdropFilter: 'blur(var(--chat-bg-blur, 17px))',
+                  WebkitBackdropFilter: 'blur(var(--chat-bg-blur, 17px))',
                 }}
                 className={`morphing-container relative flex flex-col max-h-150 overflow-hidden rounded-none`}
               >

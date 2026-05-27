@@ -221,44 +221,6 @@ export function SettingsWindow() {
 
   return (
     <div className={styles.window} onMouseDown={handleDragStart}>
-      {/* Glass distortion shader shared by .window and .dialogBackdrop backdrop-filter */}
-      <svg
-        style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }}
-        aria-hidden="true"
-      >
-        <defs>
-          <filter
-            id="glass-distort"
-            x="-10%"
-            y="-10%"
-            width="120%"
-            height="120%"
-            colorInterpolationFilters="sRGB"
-          >
-            <feTurbulence
-              type="fractalNoise"
-              baseFrequency="0.012 0.016"
-              numOctaves="4"
-              seed="5"
-              result="noise"
-            >
-              <animate
-                attributeName="baseFrequency"
-                values="0.012 0.016;0.016 0.012;0.012 0.016"
-                dur="25s"
-                repeatCount="indefinite"
-              />
-            </feTurbulence>
-            <feDisplacementMap
-              in="SourceGraphic"
-              in2="noise"
-              scale="22"
-              xChannelSelector="R"
-              yChannelSelector="G"
-            />
-          </filter>
-        </defs>
-      </svg>
       {marker && !markerDismissed ? (
         <div className={styles.banner} role="alert">
           <span className={styles.bannerIcon} aria-hidden>
