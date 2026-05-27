@@ -1784,6 +1784,7 @@ function App() {
                     'height 0.35s cubic-bezier(0.16, 1, 0.3, 1), min-height 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
                   background: `rgba(32,32,32,var(--app-bg-opacity, 0.92))`,
                   backdropFilter: 'blur(var(--chat-bg-blur, 10px))',
+                  WebkitBackdropFilter: 'blur(var(--chat-bg-blur, 10px))',
                 }}
                 className={`morphing-container relative flex flex-col max-h-150 overflow-hidden rounded-none`}
               >

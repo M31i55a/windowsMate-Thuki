@@ -370,6 +370,7 @@ async fn open_settings_window(app_handle: tauri::AppHandle) -> Result<(), String
         .center()
         .resizable(true)
         .decorations(true)
+        .transparent(true)
         .always_on_top(true)
         .skip_taskbar(true)
         .visible(true)
