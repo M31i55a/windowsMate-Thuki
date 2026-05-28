@@ -1273,6 +1273,25 @@ function App() {
       return !!cmd?.promptTemplate;
     });
 
+    // Open file picker if /file is present and no files are attached yet.
+    // This block runs before the "nothing to send" early return so that typing
+    // just "/file" (no additional text) still opens the picker.
+    if (found.has('/file') && attachedFiles.length === 0) {
+      // Suppress the minibar-on-focus-loss transition while the native dialog is
+      // open. Without this, the overlay shrinks to the minibar size, unmounting
+      // the hidden <input type="file"> so onChange never fires after selection.
+      void invoke('set_file_picker_in_progress_command', { active: true });
+      // Handle the cancel case: if the user dismisses the dialog without
+      // selecting a file, onChange will not fire, so reset the flag on focus.
+      const resetFlagOnFocus = () => {
+        window.removeEventListener('focus', resetFlagOnFocus);
+        void invoke('set_file_picker_in_progress_command', { active: false });
+      };
+      window.addEventListener('focus', resetFlagOnFocus);
+      fileInputRef.current?.click();
+      return;
+    }
+
     // Nothing to send if the message is only commands with no content or images.
     // Exception: a utility command or /think with pre-filled selected context is
     // valid even if no additional text was typed after the trigger.
@@ -1313,13 +1332,7 @@ function App() {
       return;
     }
 
-    if (found.has('/file') && attachedFiles.length === 0) {
-      // No files attached yet — open the native file picker.
-      // The input's onChange handler will attach the chosen files as chips.
-      // The query is preserved so the user can submit again with their question.
-      fileInputRef.current?.click();
-      return;
-    }
+    // /file with no files: handled before the early return above.
 
     if (attachedFiles.length > 0) {
       // Build a prompt that embeds every file's content followed by the user's
@@ -2099,6 +2112,10 @@ function App() {
                   tabIndex={-1}
                   style={{ display: 'none' }}
                   onChange={(e) => {
+                    // Clear the file-picker-in-progress flag now that the dialog
+                    // has closed with a selection (the focus-listener cancel path
+                    // also clears it, so calling twice is safe — idempotent).
+                    void invoke('set_file_picker_in_progress_command', { active: false });
                     const files = Array.from(e.target.files ?? []);
                     if (files.length > 0) handleTextFilesAttached(files);
                     // Reset so the same file can be re-selected next time.

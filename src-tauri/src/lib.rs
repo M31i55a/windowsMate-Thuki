@@ -997,6 +997,8 @@ pub fn run() {
             #[cfg(all(target_os = "windows", not(coverage)))]
             windows_focus::is_minibar_active_command,
             #[cfg(all(target_os = "windows", not(coverage)))]
+            windows_focus::set_file_picker_in_progress_command,
+            #[cfg(all(target_os = "windows", not(coverage)))]
             enter_minibar_size,
             #[cfg(all(target_os = "windows", not(coverage)))]
             exit_minibar_size,

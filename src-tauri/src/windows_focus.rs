@@ -21,11 +21,23 @@ static MINIBAR_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// window restores to its full state after the capture completes.
 static SCREENSHOT_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
+/// Set to true by the frontend while a native file picker dialog is open.
+/// Prevents the focus-loss event from triggering minibar mode (which would
+/// unmount the hidden <input type="file"> and swallow the onChange result).
+static FILE_PICKER_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+
 /// Suppresses or restores the minibar-on-focus-loss transition.
 /// Call with `true` before hiding the window for a screenshot, `false` after
 /// the window is shown again.
 pub fn set_screenshot_in_progress(active: bool) {
     SCREENSHOT_IN_PROGRESS.store(active, Ordering::SeqCst);
+}
+
+/// Suppresses or restores the minibar-on-focus-loss transition while a native
+/// file picker dialog is open. Call with `true` before opening the dialog,
+/// `false` after the dialog closes (selection or cancel).
+pub fn set_file_picker_in_progress(active: bool) {
+    FILE_PICKER_IN_PROGRESS.store(active, Ordering::SeqCst);
 }
 
 /// Returns whether the minibar is currently active.
@@ -91,6 +103,12 @@ unsafe extern "system" fn focus_event_callback(
         if SCREENSHOT_IN_PROGRESS.load(Ordering::SeqCst) {
             return;
         }
+        // Suppress focus-change events while the native file picker is open
+        // so the overlay DOM (including the hidden <input type="file">) stays
+        // mounted and the onChange callback can fire after file selection.
+        if FILE_PICKER_IN_PROGRESS.load(Ordering::SeqCst) {
+            return;
+        }
         callback(hwnd);
     }
 }
@@ -151,6 +169,16 @@ pub fn is_minibar_active_command() -> Result<bool, String> {
     Ok(is_minibar_active())
 }
 
+/// Tauri command: set or clear the file-picker-in-progress flag.
+/// Called by the frontend before opening a native file picker dialog and again
+/// after the dialog closes so focus-loss events do not trigger minibar mode.
+#[cfg_attr(coverage_nightly, coverage(off))]
+#[tauri::command]
+pub fn set_file_picker_in_progress_command(active: bool) -> Result<(), String> {
+    set_file_picker_in_progress(active);
+    Ok(())
+}
+
 // ─── Tests ───────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -201,5 +229,23 @@ mod tests {
         unsafe {
             MAIN_HWND = None;
         }
+    }
+
+    #[test]
+    fn file_picker_in_progress_starts_false() {
+        // Reset to a known state before the assertion.
+        FILE_PICKER_IN_PROGRESS.store(false, Ordering::SeqCst);
+        assert!(!FILE_PICKER_IN_PROGRESS.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn set_file_picker_in_progress_sets_flag() {
+        FILE_PICKER_IN_PROGRESS.store(false, Ordering::SeqCst);
+        set_file_picker_in_progress(true);
+        assert!(FILE_PICKER_IN_PROGRESS.load(Ordering::SeqCst));
+        set_file_picker_in_progress(false);
+        assert!(!FILE_PICKER_IN_PROGRESS.load(Ordering::SeqCst));
+        // Reset
+        FILE_PICKER_IN_PROGRESS.store(false, Ordering::SeqCst);
     }
 }
