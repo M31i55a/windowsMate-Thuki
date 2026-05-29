@@ -72,7 +72,7 @@ describe('useConversationHistory', () => {
     expect(result.current.conversationId).toBe('conv-123');
   });
 
-  it('save() fires generate_title as fire-and-forget after saving', async () => {
+  it('save() invokes generate_title after saving', async () => {
     invoke.mockResolvedValueOnce({ conversation_id: 'conv-123' });
     invoke.mockResolvedValue(undefined);
 
@@ -82,7 +82,26 @@ describe('useConversationHistory', () => {
       await result.current.save(MESSAGES, MODEL);
     });
 
-    expect(invoke).toHaveBeenCalledWith('generate_title', {
+    expect(invoke).toHaveBeenNthCalledWith(1, 'save_conversation', {
+      messages: [
+        {
+          role: 'user',
+          content: 'Hello',
+          quoted_text: null,
+          image_paths: null,
+          thinking_content: null,
+        },
+        {
+          role: 'assistant',
+          content: 'Hi there',
+          quoted_text: null,
+          image_paths: null,
+          thinking_content: null,
+        },
+      ],
+      model: MODEL,
+    });
+    expect(invoke).toHaveBeenNthCalledWith(2, 'generate_title', {
       conversationId: 'conv-123',
       messages: [
         {

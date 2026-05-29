@@ -85,12 +85,17 @@ export function useConversationHistory() {
 
       setConversationId(response.conversation_id);
 
-      // Fire-and-forget: ask Rust to generate an AI title for the conversation.
-      // The frontend can poll `list_conversations` after a delay to pick up the result.
-      void invoke('generate_title', {
-        conversationId: response.conversation_id,
-        messages: payloads,
-      });
+      // Ask Rust to generate an AI title for the conversation.
+      // Await the command so the title is written before save resolves,
+      // but do not fail the save if title generation itself fails.
+      try {
+        await invoke('generate_title', {
+          conversationId: response.conversation_id,
+          messages: payloads,
+        });
+      } catch {
+        // Title generation is best-effort; the conversation is still saved.
+      }
     },
     [isSaved],
   );
