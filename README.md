@@ -100,6 +100,18 @@ Most AI tools require accounts, API keys, or subscriptions that bill you per tok
 - **Contextual tip bar:** lightweight in-overlay hints surface the right shortcut or command at the right moment
 - **Privacy-first:** local mode is fully air-gapped; online mode shows explicit consent prompts before any screen data leaves your device
 
+## Prompt favorites
+
+Prompt favorites let you pin the prompts you reuse most so they are always ready without retyping. Open the favorites panel with <kbd>Ctrl</kbd>+<kbd>P</kbd> or by typing `/favorites` and pressing Enter. From the panel, you can insert a saved prompt into the input bar, remove prompts you no longer need, or save the current query as a new favorite.
+
+Use the command form to manage favorites directly from the input bar:
+
+- `/favorites` or `/favorites list` — open the favorites panel
+- `/favorites add <your prompt>` — pin a prompt for reuse
+- `/favorites remove <your prompt>` — delete a saved prompt
+
+Favorites are stored locally in the app state so they persist across overlay sessions on your machine. They do not execute automatically; opening the panel and choosing a saved prompt inserts it into the input field so you can review or edit before sending.
+
 ## Windows-Specific Additions
 
 This port adds several Windows-native improvements on top of the original Thuki:
