@@ -32,6 +32,7 @@ import { OnboardingView } from './view/onboarding/index';
 import type { OnboardingStage } from './view/onboarding/index';
 import { HistoryPanel } from './components/HistoryPanel';
 import { ImagePreviewModal } from './components/ImagePreviewModal';
+import { FavoritesPanel } from './components/FavoritesPanel';
 import type { AttachedImage } from './types/image';
 import { MAX_IMAGE_SIZE_BYTES } from './types/image';
 import type { AttachedFile } from './types/file';
@@ -50,6 +51,8 @@ const DEFAULT_MODEL_FALLBACK = 'gemini-3-flash-preview';
 
 const OVERLAY_VISIBILITY_EVENT = 'mate://visibility';
 const ONBOARDING_EVENT = 'mate://onboarding';
+const FAVORITE_PROMPTS_STORAGE_KEY = 'mate-favorite-prompts';
+const MAX_FAVORITE_PROMPTS = 20;
 /** Event emitted by Rust when a tray "Select Region" capture completes. Payload is the saved image file path. */
 
 /**
@@ -327,6 +330,51 @@ function App() {
 
   const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);
   const modelPickerPanelRef = useRef<HTMLDivElement>(null);
+
+  const [favoritePrompts, setFavoritePrompts] = useState<string[]>([]);
+  const [isFavoritesOpen, setIsFavoritesOpen] = useState(false);
+
+  useEffect(() => {
+    const stored = localStorage.getItem(FAVORITE_PROMPTS_STORAGE_KEY);
+    if (!stored) return;
+
+    try {
+      const parsed = JSON.parse(stored);
+      if (
+        Array.isArray(parsed) &&
+        parsed.every((item) => typeof item === 'string')
+      ) {
+        setFavoritePrompts(parsed);
+      }
+    } catch {
+      // Ignore malformed favorites data.
+    }
+  }, []);
+
+  const addFavoritePrompt = useCallback((prompt: string) => {
+    const trimmed = prompt.trim();
+    if (!trimmed) return;
+    setFavoritePrompts((prev) => {
+      const next = [trimmed, ...prev.filter((item) => item !== trimmed)].slice(
+        0,
+        MAX_FAVORITE_PROMPTS,
+      );
+      localStorage.setItem(FAVORITE_PROMPTS_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const removeFavoritePrompt = useCallback((prompt: string) => {
+    setFavoritePrompts((prev) => {
+      const next = prev.filter((item) => item !== prompt);
+      localStorage.setItem(FAVORITE_PROMPTS_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const toggleFavoritesPanel = useCallback(() => {
+    setIsFavoritesOpen((prev) => !prev);
+  }, []);
 
   /**
    * When the user submits while an online provider is active and hasn't yet
@@ -1273,6 +1321,28 @@ function App() {
       return !!cmd?.promptTemplate;
     });
 
+    if (found.has('/favorites')) {
+      const favoritesArg = strippedMessage.trim();
+      if (favoritesArg.startsWith('add ')) {
+        addFavoritePrompt(favoritesArg.slice(4));
+        setQuery('');
+        setIsFavoritesOpen(true);
+        return;
+      }
+      if (favoritesArg.startsWith('remove ')) {
+        removeFavoritePrompt(favoritesArg.slice(7).trim());
+        setQuery('');
+        setIsFavoritesOpen(true);
+        return;
+      }
+      if (favoritesArg === '' || favoritesArg === 'list') {
+        setIsFavoritesOpen(true);
+        return;
+      }
+      setIsFavoritesOpen(true);
+      return;
+    }
+
     // Open file picker if /file is present and no files are attached yet.
     // This block runs before the "nothing to send" early return so that typing
     // just "/file" (no additional text) still opens the picker.
@@ -1771,6 +1841,11 @@ function App() {
         handleHistoryToggle();
         return;
       }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'p' && !e.shiftKey) {
+        e.preventDefault();
+        toggleFavoritesPanel();
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'C') {
         e.preventDefault();
         handleCopyLastResponse();
@@ -2058,6 +2133,32 @@ function App() {
                   conflicts={capabilityConflicts}
                 />
 
+                <AnimatePresence>
+                  {isFavoritesOpen ? (
+                    <motion.div
+                      key="favorites-panel"
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 8 }}
+                      transition={{ duration: 0.18, ease: 'easeOut' }}
+                      className="border-t border-surface-border bg-surface-base px-4 pb-3"
+                    >
+                      <FavoritesPanel
+                        favorites={favoritePrompts}
+                        currentQuery={query}
+                        onInsert={(prompt) => {
+                          setQuery(prompt);
+                          setIsFavoritesOpen(false);
+                          inputRef.current?.focus();
+                        }}
+                        onRemove={(prompt) => removeFavoritePrompt(prompt)}
+                        onSaveCurrentQuery={(prompt) => addFavoritePrompt(prompt)}
+                        onClose={() => setIsFavoritesOpen(false)}
+                      />
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
+
                 {/* Agent mode indicator — shown when agent is active */}
                 <AgentIndicator
                   isActive={agentMode.isActive}
@@ -2087,6 +2188,8 @@ function App() {
                   inputRef={inputRef}
                   selectedText={selectedContext ?? undefined}
                   onHistoryOpen={handleHistoryToggle}
+                  onFavoritesOpen={toggleFavoritesPanel}
+                  isFavoritesOpen={isFavoritesOpen}
                   onSettingsOpen={() => { void invoke('open_settings_window'); }}
                   attachedImages={isSubmitPending ? [] : attachedImages}
                   onImagesAttached={handleImagesAttached}

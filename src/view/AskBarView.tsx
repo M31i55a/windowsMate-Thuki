@@ -269,6 +269,10 @@ interface AskBarViewProps {
    * Omit to hide the history icon entirely.
    */
   onHistoryOpen?: () => void;
+  /** Called when the favorites button is clicked. */
+  onFavoritesOpen?: () => void;
+  /** When true, the favorites panel is currently open. */
+  isFavoritesOpen?: boolean;
   /** Called when the settings gear icon is clicked. */
   onSettingsOpen?: () => void;
   /** Currently attached images (may still be processing in the background). */
@@ -325,6 +329,8 @@ export function AskBarView({
   inputRef,
   selectedText,
   onHistoryOpen,
+  onFavoritesOpen,
+  isFavoritesOpen = false,
   onSettingsOpen,
   attachedImages,
   onImagesAttached,
@@ -750,6 +756,29 @@ export function AskBarView({
               className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-text-primary hover:bg-white/8 transition-colors duration-150 cursor-pointer outline-none"
             >
               {HISTORY_ICON}
+            </button>
+          )}
+
+          {!isChatMode && onFavoritesOpen && (
+            <button
+              type="button"
+              onClick={onFavoritesOpen}
+              aria-label={isFavoritesOpen ? 'Close favorites' : 'Open favorites'}
+              className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-text-primary hover:bg-white/8 transition-colors duration-150 cursor-pointer outline-none"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true"
+              >
+                <path
+                  d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27z"
+                  fill="currentColor"
+                />
+              </svg>
             </button>
           )}
 

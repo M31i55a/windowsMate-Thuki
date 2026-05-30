@@ -81,11 +81,12 @@ Most AI tools require accounts, API keys, or subscriptions that bill you per tok
 - **Isolated sandbox:** optionally run models in a hardened Docker container with capability dropping, read-only volumes, and localhost-only networking
 - **Image input:** paste or drag images and screenshots directly into the chat
 - **File attachments:** type `/file` (or `/file your question`) to open a native file picker — Mate reads up to 5 text files at once (`.txt`, `.md`, `.json`, `.ts`, `.py`, `.rs`, and more, up to 1 MB each) and sends their full contents to the model as context
+- **Prompt favorites:** press <kbd>Ctrl</kbd>+<kbd>P</kbd> or type `/favorites` to open your saved prompt panel and pin frequently used prompts for reuse
 - **Screen capture:** type `/screen` or click the camera button to instantly capture your entire screen and attach it to your question as context
 - **Region capture:** click the crosshair button in the ask bar to open a fullscreen drag-to-select overlay — draw a rectangle over any part of your screen and the cropped region is attached as context
 - **Agent mode:** type `/do` to let Mate autonomously control your desktop — launch apps, type text, press key combos, and complete multi-step tasks. Works with both vision and text-only local models; cloud providers ask for screenshot consent before sending any screen data off-device
 - **Agentic search:** type `/search` to run a fully local, multi-step search pipeline (SearXNG + Trafilatura reader) with a live trace of every query, fetch, and judgement step
-- **Slash commands:** built-in commands for live search and prompt shortcuts: `/do`, `/file`, `/search`, `/screen`, `/think`, `/translate`, `/rewrite`, `/tldr`, `/refine`, `/bullets`, `/todos`. Highlight text anywhere, summon Mate, type a command, and hit Enter
+- **Slash commands:** built-in commands for live search and prompt shortcuts: `/do`, `/file`, `/favorites`, `/search`, `/screen`, `/think`, `/translate`, `/rewrite`, `/tldr`, `/refine`, `/bullets`, `/todos`. Highlight text anywhere, summon Mate, type a command, and hit Enter
 - **Extended reasoning:** type `/think` to have the model reason through a problem step by step before answering
 - **Voice output (TTS):** click the speaker icon on any assistant message to have it read aloud using Microsoft Edge Neural TTS — pick from a rich set of voices in Settings → Sound
 - **Conversation trace recorder:** optionally record every chat and `/search` session as JSON-Lines for debugging and forensics — off by default; enable from Settings or set `[debug] trace_enabled = true` in `config.toml`

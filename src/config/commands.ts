@@ -151,6 +151,26 @@ export const COMMANDS: readonly Command[] = [
     },
   },
   {
+    trigger: '/favorites',
+    label: '/favorites',
+    description: 'Open and manage saved prompt favorites',
+    docs: {
+      summary:
+        'Shows your saved prompt favorites and lets you pin frequently used prompts for reuse.',
+      usage: '/favorites [list|add|remove]',
+      examples: [
+        '/favorites: open the favorites panel',
+        '/favorites add write a polite follow-up email: save a prompt for reuse',
+        '/favorites remove write a polite follow-up email: delete a saved prompt',
+      ],
+      behavior:
+        'Use /favorites to view saved prompt favorites in a panel. Add a prompt with /favorites add <text> and remove one with /favorites remove <text>. You can also open the panel with Ctrl+P.',
+    },
+    promptHelp: {
+      summary: 'manage your saved prompt favorites for quick reuse.',
+    },
+  },
+  {
     trigger: '/translate',
     label: '/translate',
     description: 'Translate text to another language',

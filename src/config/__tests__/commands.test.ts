@@ -74,6 +74,15 @@ describe('COMMANDS registry', () => {
     expect(cmd?.promptHelp.summary).toBeDefined();
   });
 
+  it('includes the /favorites command', () => {
+    const cmd = COMMANDS.find((c: Command) => c.trigger === '/favorites');
+    expect(cmd).toBeDefined();
+    expect(cmd?.label).toBe('/favorites');
+    expect(cmd?.description.length).toBeGreaterThan(0);
+    expect(cmd?.docs.summary).toContain('favorites');
+    expect(cmd?.promptHelp.summary).toContain('favorites');
+  });
+
   it('includes the /translate command', () => {
     const cmd = COMMANDS.find((c: Command) => c.trigger === '/translate');
     expect(cmd).toBeDefined();
