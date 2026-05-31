@@ -40,16 +40,29 @@ describe('ConversationView', () => {
   });
 
   it('shows TypingIndicator when isGenerating with empty assistant content', () => {
-    const { container } = render(
-      <ConversationView
-        messages={[{ id: '1', role: 'assistant' as const, content: '' }]}
-        isGenerating={true}
-        onClose={vi.fn()}
-      />,
-    );
-    // New indicator: 9-dot spiral grid
-    const dots = container.querySelectorAll('.rounded-full');
-    expect(dots.length).toBeGreaterThanOrEqual(9);
+    vi.useFakeTimers();
+    try {
+      const { container } = render(
+        <ConversationView
+          messages={[{ id: '1', role: 'assistant' as const, content: '' }]}
+          isGenerating={true}
+          onClose={vi.fn()}
+        />,
+      );
+      // TypingIndicator has 800ms delay before showing
+      let dots = container.querySelectorAll('.rounded-full');
+      expect(dots.length).toBeLessThan(9); // Not yet visible before delay
+
+      act(() => {
+        vi.advanceTimersByTime(800);
+      });
+
+      // New indicator: 9-dot spiral grid
+      dots = container.querySelectorAll('.rounded-full');
+      expect(dots.length).toBeGreaterThanOrEqual(9);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('hides TypingIndicator when assistant content arrives', () => {

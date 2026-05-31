@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { ChatBubble } from '../components/ChatBubble';
 import { TypingIndicator } from '../components/TypingIndicator';
 import { VoiceSelector } from '../components/VoiceSelector';
@@ -106,6 +106,13 @@ export function ConversationView({
 }: ConversationViewProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  /**
+   * Delayed typing indicator visibility.
+   * Set to true only after ~800ms of generation to avoid showing "thinking…"
+   * for fast responses, making them feel instant.
+   */
+  const [showTypingIndicator, setShowTypingIndicator] = useState(false);
+
   /** Threshold in pixels — if within this distance of the bottom, consider "near bottom". */
   const NEAR_BOTTOM_THRESHOLD = 60;
 
@@ -122,6 +129,28 @@ export function ConversationView({
    */
   const shouldAutoScrollRef = useRef(true);
   const prevMessagesLengthRef = useRef(0);
+
+  /**
+   * Show typing indicator only after ~800ms of generation.
+   * Fast responses complete before this timeout, giving the user an instant
+   * feel without the distraction of a loading indicator.
+   * When generation completes (isGenerating → false), reset immediately.
+   */
+  useEffect(() => {
+    if (!isGenerating) {
+      setShowTypingIndicator(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setShowTypingIndicator(true);
+    }, 800);
+
+    return () => {
+      clearTimeout(timer);
+      setShowTypingIndicator(false);
+    };
+  }, [isGenerating]);
 
   /**
    * Wheel listener — the only mechanism that can disable auto-scroll.
@@ -263,8 +292,9 @@ export function ConversationView({
           );
         })}
 
-        {/* Typing indicator (pulsing dots) shown before first token arrives */}
-        {isGenerating &&
+        {/* Typing indicator (pulsing dots) shown only after ~800ms of generation.
+            Fast responses complete before the timeout, feeling instant to the user. */}
+        {showTypingIndicator &&
         messages[messages.length - 1]?.role === 'assistant' &&
         !messages[messages.length - 1]?.content &&
         !messages[messages.length - 1]?.thinkingContent ? (
