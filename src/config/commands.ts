@@ -56,22 +56,24 @@ export const COMMANDS: readonly Command[] = [
     description: 'Capture your screen and include it as context',
     docs: {
       summary:
-        'Captures your screen and attaches it as context for the current message.',
-      usage: '/screen [optional message]',
+        'Captures your screen and attaches it as context for the current message. Use /screen region select to draw a crop rectangle instead of capturing the full screen.',
+      usage: '/screen [region select] [optional message]',
       examples: [
         '/screen: sends a screenshot with no additional message',
         '/screen what is this error?: attaches a screenshot and asks a question about it',
+        '/screen region select: opens a crosshair overlay to draw a region rectangle',
+        '/screen region select my error details: captures region and asks about it',
       ],
       behavior:
-        "The screenshot is taken when you submit the message. Mate's own window is excluded from the capture, and the image appears in your message bubble like a pasted screenshot.",
+        "The screenshot is taken when you submit the message. Mate's own window is excluded from the capture, and the image appears in your message bubble like a pasted screenshot. Use /screen region select to draw a crop rectangle on screen instead of capturing everything—the region selection overlay will activate and let you click-drag to select the area you want to capture.",
       composability:
-        '/screen can combine with /think and utility commands. For example, /screen /rewrite captures the screen and rewrites whatever text the model can see.',
+        '/screen can combine with /think and utility commands. For example, /screen /rewrite captures the screen and rewrites whatever text the model can see. Region selection works with /think as well: /think /screen region select.',
       limit:
         'One /screen capture per message. You may also attach up to 3 images manually for a total of 4 images per message.',
       permission:
         'Requires Screen Recording permission. If denied, Mate cannot capture the screen until access is granted in System Settings.',
     },
-    promptHelp: { summary: 'capture current screen and attach it as image context.' },
+    promptHelp: { summary: 'capture current screen (or draw a region) and attach it as image context.' },
   },
   {
     trigger: '/do',
