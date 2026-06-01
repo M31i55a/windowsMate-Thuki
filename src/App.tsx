@@ -1903,6 +1903,11 @@ function App() {
         handleCloseOverlay();
         return;
       }
+      if ((e.ctrlKey && e.key === 'k') || (e.metaKey && e.key === 'k')) {
+        e.preventDefault();
+        resetForNewConversation();
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.key === 'n' && !e.shiftKey) {
         e.preventDefault();
         handleNewConversation();
@@ -1931,7 +1936,7 @@ function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleCloseOverlay, handleNewConversation, handleSave, handleHistoryToggle, handleCopyLastResponse]);
+  }, [handleCloseOverlay, resetForNewConversation, handleNewConversation, handleSave, handleHistoryToggle, handleCopyLastResponse]);
 
   /** Programmatic focus when the overlay becomes visible. */
   useEffect(() => {
