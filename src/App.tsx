@@ -1265,57 +1265,28 @@ function App() {
   /**
    * Handler for `/screen region select` command. Opens an interactive region
    * selection overlay (crosshair cursor). User draws a rectangle to capture
-   * just that area as base64 PNG. On cancel (Escape), does nothing.
+   * just that area. On success, attaches the image to state and injects any
+   * remaining text (after "region select") into the query input for the user
+   * to review/edit before submitting. Behaves exactly like handleRegionCapture
+   * but triggered by slash command with optional trailing text.
    */
   const handleScreenRegionSubmit = useCallback(
-    async (fullQuery: string, think?: boolean) => {
-      // eslint-disable-next-line no-control-regex
-      const CONTROL_CHARS = /[\x00-\x08\x0b\x0c\x0e-\x1f]/g;
-      const sanitized = selectedContext
-        ?.replace(CONTROL_CHARS, '')
-        .slice(0, quote.maxContextLength);
-      const context = sanitized?.trim() ? sanitized : undefined;
+    async (fullQuery: string) => {
+      // fullQuery is like "/screen region select explain" or just "/screen region select"
+      // Extract any text after "region select" to inject into the input.
+      const screenArg = fullQuery.replace(/^\/screen\s+/, '').trim();
+      let trailingText = '';
+      if (screenArg.startsWith('region select ')) {
+        trailingText = screenArg.slice('region select '.length);
+      }
 
-      // Snapshot display paths for the pending bubble.
-      const existingDisplayPaths = attachedImages.map(
-        (img) => img.filePath ?? img.blobUrl,
-      );
+      // Guard: don't add more images if already at max.
+      if (attachedImages.length >= MAX_IMAGES) return;
 
-      // Store the original input so handleCancel can restore it if the user
-      // aborts the capture before it resolves.
-      screenCaptureInputSnapshotRef.current = {
-        query: fullQuery,
-        context,
-      };
-
-      // Immediately show the user's message with a loading placeholder.
-      screenCapturePendingRef.current = true;
-      setIsSubmitPending(true);
-      setPendingUserMessage({
-        id: crypto.randomUUID(),
-        role: 'user',
-        content: fullQuery,
-        quotedText: context,
-        imagePaths: [...existingDisplayPaths, SCREEN_CAPTURE_PLACEHOLDER],
-      });
-      setQuery('');
-      setSelectedContext(null);
-      /* v8 ignore start -- inputRef always set when overlay is visible */
-      if (inputRef.current) inputRef.current.style.height = 'auto';
-      /* v8 ignore stop */
-
-      let base64Data: string | null;
+      let screenshotPath: string | null;
       try {
-        const result = await invoke<string | null>('capture_screenshot_command');
-        base64Data = result;
+        screenshotPath = await invoke<string | null>('capture_screenshot_command');
       } catch (e) {
-        screenCapturePendingRef.current = false;
-        screenCaptureInputSnapshotRef.current = null;
-        // Capture failed: restore input state.
-        setIsSubmitPending(false);
-        setPendingUserMessage(null);
-        setQuery(fullQuery);
-        setSelectedContext(context ?? null);
         setCaptureError(
           typeof e === 'string'
             ? e
@@ -1326,48 +1297,29 @@ function App() {
         return;
       }
 
-      // Check for mid-flight cancellation.
-      const wasCancelled = !screenCapturePendingRef.current;
-      screenCapturePendingRef.current = false;
-      screenCaptureInputSnapshotRef.current = null;
-      if (wasCancelled) return;
-
-      // User cancelled region selection (Escape key): no base64 returned.
-      if (base64Data === null) {
-        setIsSubmitPending(false);
-        setPendingUserMessage(null);
-        setQuery(fullQuery);
-        setSelectedContext(context ?? null);
+      // User cancelled region selection (Escape key): no path returned.
+      if (screenshotPath === null) {
         return;
       }
 
-      // Capture succeeded: convert base64 to blob URL and attach.
+      // Capture succeeded: attach image to state (don't submit immediately).
       setCaptureError(null);
-      setIsSubmitPending(false);
-      setPendingUserMessage(null);
+      const assetUrl = convertFileSrc(screenshotPath);
+      setAttachedImages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          blobUrl: assetUrl,
+          filePath: screenshotPath,
+        },
+      ]);
 
-      // Convert base64 PNG to blob URL for display.
-      const binaryString = atob(base64Data);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
+      // Inject trailing text into the input if present.
+      if (trailingText) {
+        setQuery(trailingText);
       }
-      const blob = new Blob([bytes], { type: 'image/png' });
-      const blobUrl = URL.createObjectURL(blob);
-
-      // Merge region capture with existing attached images.
-      const readyPaths = attachedImages
-        .filter((img) => img.filePath !== null)
-        .map((img) => img.filePath as string);
-      readyPaths.push(blobUrl);
-
-      ask(fullQuery, context, readyPaths, think);
-      for (const img of attachedImages) {
-        URL.revokeObjectURL(img.blobUrl);
-      }
-      setAttachedImages([]);
     },
-    [selectedContext, attachedImages, ask, setSelectedContext, setCaptureError],
+    [attachedImages],
   );
 
   const handleSubmit = useCallback(() => {
@@ -1515,21 +1467,9 @@ function App() {
         screenArg === 'region';
 
       if (isRegionSelect) {
-        // Remove 'region' or 'region select' from the message.
-        let messageAfterRegion = screenArg;
-        if (screenArg.startsWith('region select ')) {
-          messageAfterRegion = screenArg.slice('region select '.length);
-        } else if (screenArg.startsWith('region ')) {
-          messageAfterRegion = screenArg.slice('region '.length);
-        } else if (screenArg === 'region select' || screenArg === 'region') {
-          messageAfterRegion = '';
-        }
-        // Reconstruct the query without the region subcommand.
-        const finalQuery = messageAfterRegion
-          ? `/screen ${messageAfterRegion}`
-          : '/screen';
-        // Fire-and-forget: the async path handles cleanup and ask() invocation.
-        void handleScreenRegionSubmit(finalQuery, hasThink);
+        // Pass the full query to handleScreenRegionSubmit so it can extract
+        // trailing text (e.g., "explain") to inject into the input.
+        void handleScreenRegionSubmit(trimmedQuery);
         return;
       }
 

@@ -766,6 +766,15 @@ pub async fn capture_screenshot_command(
     .await
     .map_err(|e| format!("image encoding task failed: {e}"))??;
 
+    // Re-show the overlay window after region capture completes.
+    let show_handle = app_handle.clone();
+    let _ = app_handle.run_on_main_thread(move || {
+        if let Some(w) = show_handle.get_webview_window("main") {
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+    });
+
     Ok(Some(result))
 }
 
