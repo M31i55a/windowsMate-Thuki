@@ -531,9 +531,11 @@ function App() {
 
   /** Apply appearance CSS vars from localStorage on mount. */
   useEffect(() => {
+    const primaryColor = localStorage.getItem('mate-color-primary') ?? '#ff8d5c';
     const color = localStorage.getItem('mate-bubble-color') ?? '#ff8d5c';
     const opacity = localStorage.getItem('mate-bg-opacity') ?? '0.92';
     const blurPx = localStorage.getItem('mate-chat-blur-px') ?? '10';
+    document.documentElement.style.setProperty('--color-primary', primaryColor);
     document.documentElement.style.setProperty('--bubble-color', color);
     document.documentElement.style.setProperty('--app-bg-opacity', opacity);
     document.documentElement.style.setProperty('--chat-bg-blur', `${blurPx}px`);
@@ -541,9 +543,12 @@ function App() {
     // Listen for live appearance changes broadcast from the settings window.
     let unlisten: (() => void) | undefined;
     void import('@tauri-apps/api/event').then(({ listen }) => {
-      void listen<{ bubbleColor: string | null; opacity: string | null; blur: string | null }>(
+      void listen<{ bubbleColor: string | null; primaryColor: string | null; opacity: string | null; blur: string | null }>(
         'mate://appearance',
         ({ payload }) => {
+          if (payload.primaryColor) {
+            document.documentElement.style.setProperty('--color-primary', payload.primaryColor);
+          }
           if (payload.bubbleColor) {
             document.documentElement.style.setProperty('--bubble-color', payload.bubbleColor);
           }

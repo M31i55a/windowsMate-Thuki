@@ -16,6 +16,9 @@ interface DisplayTabProps {
 }
 
 export function DisplayTab({ config, resyncToken, onSaved }: DisplayTabProps) {
+  const [primaryColor, setPrimaryColor] = useState(
+    () => localStorage.getItem('mate-color-primary') ?? '#ff8d5c',
+  );
   const [bubbleColor, setBubbleColor] = useState(
     () => localStorage.getItem('mate-bubble-color') ?? '#ff8d5c',
   );
@@ -30,7 +33,14 @@ export function DisplayTab({ config, resyncToken, onSaved }: DisplayTabProps) {
     setBubbleColor(color);
     localStorage.setItem('mate-bubble-color', color);
     document.documentElement.style.setProperty('--bubble-color', color);
-    void emit('mate://appearance', { bubbleColor: color, opacity: null, blur: null });
+    void emit('mate://appearance', { bubbleColor: color, primaryColor: null, opacity: null, blur: null });
+  }
+
+  function applyPrimaryColor(color: string) {
+    setPrimaryColor(color);
+    localStorage.setItem('mate-color-primary', color);
+    document.documentElement.style.setProperty('--color-primary', color);
+    void emit('mate://appearance', { bubbleColor: null, primaryColor: color, opacity: null, blur: null });
   }
 
   function applyTransparency(pct: number) {
@@ -39,14 +49,14 @@ export function DisplayTab({ config, resyncToken, onSaved }: DisplayTabProps) {
     localStorage.setItem('mate-bg-opacity-pct', String(pct));
     localStorage.setItem('mate-bg-opacity', opacity);
     document.documentElement.style.setProperty('--app-bg-opacity', opacity);
-    void emit('mate://appearance', { bubbleColor: null, opacity, blur: null });
+    void emit('mate://appearance', { bubbleColor: null, primaryColor: null, opacity, blur: null });
   }
 
   function applyBlur(px: number) {
     setBlur(px);
     localStorage.setItem('mate-chat-blur-px', String(px));
     document.documentElement.style.setProperty('--chat-bg-blur', `${px}px`);
-    void emit('mate://appearance', { bubbleColor: null, opacity: null, blur: String(px) });
+    void emit('mate://appearance', { bubbleColor: null, primaryColor: null, opacity: null, blur: String(px) });
   }
 
   return (
@@ -130,6 +140,15 @@ export function DisplayTab({ config, resyncToken, onSaved }: DisplayTabProps) {
       </Section>
 
       <Section heading="Appearance">
+        <SettingRow label="Primary accent color">
+          <input
+            type="color"
+            value={primaryColor}
+            onChange={(e) => applyPrimaryColor(e.target.value)}
+            aria-label="Primary accent color"
+            style={{ width: 40, height: 28, padding: 2, cursor: 'pointer', borderRadius: 6, border: '1px solid rgba(255,255,255,0.15)', background: 'transparent' }}
+          />
+        </SettingRow>
         <SettingRow label="Chat bubble color">
           <input
             type="color"
