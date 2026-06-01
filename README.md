@@ -57,6 +57,23 @@ Select any text and press <kbd>Ctrl</kbd>+<kbd>Space</kbd> to instantly explain 
 
 Select any text in any app, then press and hold <kbd>Ctrl</kbd>+<kbd>Shift</kbd>. If you don't press any other key within 700 ms, Mate opens in **inline-edit mode** with your selection pre-loaded — ready for you to ask the AI to rewrite, improve, translate, or transform it. The 700 ms grace period lets normal <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd> shortcuts (e.g. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> in VS Code) pass through untouched.
 
+### Clear Session (Ctrl+K)
+
+Press <kbd>Ctrl</kbd>+<kbd>K</kbd> while Mate is open to instantly clear the current chat and start fresh without reopening the window. This clears:
+
+- All messages in the conversation
+- The input query
+- Any attached images or files
+- Pending states
+
+**Use cases:**
+
+- Quick context reset between unrelated questions
+- Clear out a long conversation thread without losing the window state
+- Start a new topic immediately without reopening Mate
+
+**Note:** Unlike `Ctrl+N` (which shows a save prompt for unsaved conversations), `Ctrl+K` is a hard reset—no confirmation, instant clear. It's designed for quick session resets.
+
 ## Why Mate?
 
 Most AI tools require accounts, API keys, or subscriptions that bill you per token. Mate is different:
@@ -73,6 +90,7 @@ Most AI tools require accounts, API keys, or subscriptions that bill you per tok
 - **Always available:** double-tap Control <kbd>Ctrl</kbd> to summon the overlay from any app
 - **Quick Explain:** select any text and press <kbd>Ctrl</kbd>+<kbd>Space</kbd> — Mate opens and instantly explains your selection without any extra typing
 - **Inline Edit:** select text in any app, press <kbd>Ctrl</kbd>+<kbd>Shift</kbd> and hold for 700 ms (without pressing any other key) — Mate opens in inline-edit mode with your selection ready for AI rewriting, translation, or transformation
+- **Clear session:** press <kbd>Ctrl</kbd>+<kbd>K</kbd> while Mate is open to instantly clear the chat, attached images, and query — start a fresh conversation without reopening the window
 - **Context-aware quotes:** highlight any text, then double-tap Control <kbd>Ctrl</kbd> to open Mate with the selected text pre-filled as a quote
 - **Throwaway conversations:** fast, lightweight interactions without the overhead of a full chat app
 - **Conversation history:** persist and revisit past conversations across sessions
