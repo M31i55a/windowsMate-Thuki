@@ -1,13 +1,14 @@
 /**
- * ProviderPickerPanel — wraps ModelPickerPanel with a Local / Online tab switcher.
+ * ProviderPickerPanel — wraps ModelPickerPanel with a Local / Online / Test tab switcher.
  *
  * Local tab: existing Ollama model list (delegates fully to ModelPickerPanel).
  * Online tab: OpenRouter model list; prompts for API key inline if not connected.
+ * Test tab: Claude models; prompts for Claude API key inline if not connected.
  */
 import { useState } from 'react';
 import type { ModelCapabilitiesMap } from '../types/model';
 import { ModelPickerPanel } from './ModelPickerPanel';
-import { OPENROUTER_MODELS } from '../hooks/useProvider';
+import { OPENROUTER_MODELS, CLAUDE_MODELS } from '../hooks/useProvider';
 import type { ProviderState } from '../hooks/useProvider';
 
 export interface ProviderPickerPanelProps {
@@ -24,6 +25,8 @@ export interface ProviderPickerPanelProps {
   compact?: boolean;
   /** Provider state from useProvider hook. */
   provider: ProviderState;
+  /** Called when the user picks a Claude model in test tab. */
+  onSelectClaude?: (model: string) => void;
 }
 
 /** Cloud/globe icon for the Online tab. */
@@ -42,6 +45,15 @@ const CPU_ICON = (
   </svg>
 );
 
+/** Test/flask icon for the Test tab. */
+const TEST_ICON = (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M9 3h6v7H9z" />
+    <path d="M9 10h2v2H9zm4 0h2v2h-2z" />
+    <path d="M12 12v8M8 20h8" />
+  </svg>
+);
+
 /** Check icon inline. */
 const CHECK_ICON = (
   <svg className="w-3.5 h-3.5 shrink-0 mt-0.5 text-primary" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -57,14 +69,21 @@ export function ProviderPickerPanel({
   capabilities,
   compact = false,
   provider,
+  onSelectClaude,
 }: ProviderPickerPanelProps) {
-  const [tab, setTab] = useState<'local' | 'online'>(provider.mode === 'openrouter' ? 'online' : 'local');
+  const [tab, setTab] = useState<'local' | 'online' | 'test'>(
+    provider.mode === 'openrouter' ? 'online' : provider.mode === 'test' ? 'test' : 'local'
+  );
   const [keyInput, setKeyInput] = useState('');
   const [selectedOrModel, setSelectedOrModel] = useState(
     provider.openRouter?.model ?? OPENROUTER_MODELS[0],
   );
+  const [selectedClaudeModel, setSelectedClaudeModel] = useState(
+    provider.claude?.model ?? CLAUDE_MODELS[0],
+  );
 
   const isConnected = provider.openRouter !== null && provider.mode === 'openrouter';
+  const isClaudeConnected = provider.claude !== null && provider.mode === 'test';
 
   async function handleConnect() {
     if (!keyInput.trim()) return;
@@ -86,14 +105,35 @@ export function ProviderPickerPanel({
     onClose?.();
   }
 
+  async function handleConnectClaude() {
+    if (!keyInput.trim()) return;
+    await provider.connectClaude(keyInput.trim(), selectedClaudeModel);
+    setKeyInput('');
+  }
+
+  async function handleSelectClaudeModel(model: string) {
+    setSelectedClaudeModel(model);
+    if (provider.claude) {
+      await provider.setClaudeModel(model);
+    }
+    onSelectClaude?.(model);
+    onClose?.();
+  }
+
+  async function handleDisconnectClaude() {
+    await provider.disconnectClaude();
+    setTab('local');
+    onClose?.();
+  }
+
   return (
     <div className="flex flex-col w-full">
       {/* Tab switcher */}
-      <div className="flex items-center gap-1 px-3 pt-2 pb-2 border-b border-surface-border">
+      <div className="flex items-center gap-1 px-3 pt-2 pb-2 border-b border-surface-border overflow-x-auto">
         <button
           type="button"
           onClick={() => setTab('local')}
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors duration-120 outline-none ${
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors duration-120 outline-none whitespace-nowrap ${
             tab === 'local'
               ? 'bg-primary/15 text-primary'
               : 'text-text-secondary hover:text-text-primary hover:bg-white/5'
@@ -105,7 +145,7 @@ export function ProviderPickerPanel({
         <button
           type="button"
           onClick={() => setTab('online')}
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors duration-120 outline-none ${
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors duration-120 outline-none whitespace-nowrap ${
             tab === 'online'
               ? 'bg-primary/15 text-primary'
               : 'text-text-secondary hover:text-text-primary hover:bg-white/5'
@@ -114,6 +154,21 @@ export function ProviderPickerPanel({
           {GLOBE_ICON}
           Online
           {isConnected && (
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('test')}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors duration-120 outline-none whitespace-nowrap ${
+            tab === 'test'
+              ? 'bg-primary/15 text-primary'
+              : 'text-text-secondary hover:text-text-primary hover:bg-white/5'
+          }`}
+        >
+          {TEST_ICON}
+          Test
+          {isClaudeConnected && (
             <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
           )}
         </button>
@@ -130,7 +185,7 @@ export function ProviderPickerPanel({
           capabilities={capabilities}
           compact={compact}
         />
-      ) : (
+      ) : tab === 'online' ? (
         <div className="flex flex-col">
           {isConnected ? (
             /* Connected state: show model list */
@@ -226,6 +281,39 @@ export function ProviderPickerPanel({
               </button>
             </div>
           )}
+        </div>
+      ) : (
+        /* Test tab: Claude models - always connected with static API key */
+        <div className="flex flex-col">
+          <div className="px-3 pt-2 pb-1 flex items-center gap-2">
+            <span className="text-[10.5px] text-text-secondary">
+              <span className="text-green-400 font-medium">●</span>{' '}
+              {provider.claude?.label || 'Claude'}
+            </span>
+          </div>
+          <div className="px-3 py-2 text-[10px] text-text-secondary/70 border-b border-surface-border">
+            Connected with Claude API
+          </div>
+          <div className="overflow-y-auto py-1 max-h-[280px]">
+            {CLAUDE_MODELS.map((model) => {
+              const active = model === provider.claude?.model;
+              return (
+                <button
+                  key={model}
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  onClick={() => void handleSelectClaudeModel(model)}
+                  className="flex items-center justify-between gap-2.5 px-3 py-2 rounded-lg w-full text-left text-sm text-text-primary cursor-pointer transition-colors duration-120 hover:bg-white/5"
+                >
+                  <span className="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap leading-tight">
+                    {model}
+                  </span>
+                  <span style={{ opacity: active ? 1 : 0 }}>{CHECK_ICON}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

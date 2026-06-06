@@ -973,6 +973,8 @@ pub fn run() {
             #[cfg(all(target_os = "windows", not(coverage)))]
             agent::validate_openrouter_key,
             #[cfg(all(target_os = "windows", not(coverage)))]
+            agent::validate_claude_key,
+            #[cfg(all(target_os = "windows", not(coverage)))]
             computer_control::execute_action_command,
             #[cfg(all(target_os = "windows", not(coverage)))]
             windows_screenshot::capture_silent_screenshot,

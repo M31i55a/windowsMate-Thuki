@@ -1469,6 +1469,7 @@ pub fn set_agent_provider(
         "ollama" => providers::Provider::Ollama,
         "openai" => providers::Provider::OpenAI,
         "anthropic" => providers::Provider::Anthropic,
+        "claude" => providers::Provider::Anthropic, // Claude uses Anthropic API
         "openrouter" => providers::Provider::OpenRouter,
         _ => return Err(format!("Unknown provider: {}", provider)),
     };
@@ -1541,6 +1542,33 @@ pub async fn validate_openrouter_key(api_key: String) -> Result<String, String> 
             Err(format!("OpenRouter returned status {status}"))
         }
     }
+}
+
+/// Validate a Claude (Anthropic) API key.
+/// For now, we do basic format validation. The actual key will be validated
+/// when making the first API call, and invalid keys will produce clear errors then.
+#[tauri::command]
+pub async fn validate_claude_key(api_key: String) -> Result<String, String> {
+    let trimmed = api_key.trim();
+    
+    // Check for empty key
+    if trimmed.is_empty() {
+        return Err("API key is empty".to_string());
+    }
+    
+    // Check for common Claude API key format (they typically start with 'sk-ant-')
+    if !trimmed.starts_with("sk-ant-") && !trimmed.starts_with("sk-") {
+        return Err("API key format looks invalid. Claude API keys typically start with 'sk-ant-'".to_string());
+    }
+    
+    // Check for reasonable length (Claude keys are usually 40+ characters)
+    if trimmed.len() < 20 {
+        return Err("API key is too short. Please check your key.".to_string());
+    }
+    
+    // Key format looks valid - return success
+    // Actual authentication will be tested when making the first API call
+    Ok("Claude".to_string())
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────────

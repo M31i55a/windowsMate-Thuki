@@ -11,6 +11,29 @@ use tokio_util::sync::CancellationToken;
 
 use super::{ProviderChunk, ToolCall};
 
+/// Detects image format from base64-encoded image data by checking the first encoded characters
+/// Base64 encoding of magic bytes:
+/// PNG (0x89 0x50 0x4E 0x47) -> iVBO
+/// JPEG (0xFF 0xD8 0xFF) -> /9j
+/// GIF (0x47 0x49 0x46) -> R0l
+/// WebP (RIFF...WEBP) -> UklG
+fn detect_image_media_type(base64_data: &str) -> &'static str {
+    let trimmed = base64_data.trim();
+    
+    if trimmed.starts_with("iVBO") {
+        "image/png"
+    } else if trimmed.starts_with("/9j") {
+        "image/jpeg"
+    } else if trimmed.starts_with("R0l") {
+        "image/gif"
+    } else if trimmed.starts_with("UklG") {
+        "image/webp"
+    } else {
+        // Default to JPEG for unknown formats
+        "image/jpeg"
+    }
+}
+
 // ─── Request types ────────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
@@ -159,11 +182,12 @@ pub async fn stream_anthropic_chat(
         // Add image content.
         if let Some(ref imgs) = m.images {
             for img in imgs {
+                let media_type = detect_image_media_type(img);
                 content_parts.push(serde_json::json!({
                     "type": "image",
                     "source": {
                         "type": "base64",
-                        "media_type": "image/png",
+                        "media_type": media_type,
                         "data": img,
                     },
                 }));
@@ -172,11 +196,12 @@ pub async fn stream_anthropic_chat(
 
         // If there's a screenshot for computer use, add it.
         if let Some(ref b64) = screenshot_b64 {
+            let media_type = detect_image_media_type(b64);
             content_parts.push(serde_json::json!({
                 "type": "image",
                 "source": {
                     "type": "base64",
-                    "media_type": "image/png",
+                    "media_type": media_type,
                     "data": b64,
                 },
             }));
@@ -184,19 +209,11 @@ pub async fn stream_anthropic_chat(
 
         if m.role == "user" {
             anthropic_messages.push(AnthropicMessage::User {
-                content: if content_parts.len() == 1 {
-                    content_parts.into_iter().next().unwrap()
-                } else {
-                    Value::Array(content_parts)
-                },
+                content: Value::Array(content_parts),
             });
         } else {
             anthropic_messages.push(AnthropicMessage::Assistant {
-                content: if content_parts.len() == 1 {
-                    content_parts.into_iter().next().unwrap()
-                } else {
-                    Value::Array(content_parts)
-                },
+                content: Value::Array(content_parts),
             });
         }
     }
