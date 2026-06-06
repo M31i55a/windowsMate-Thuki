@@ -45,6 +45,10 @@ interface RawAppConfig {
     max_display_chars: number;
     max_context_length: number;
   };
+  appearance: {
+    color_primary: string;
+    app_bg_opacity: number;
+  };
   search: {
     searxng_url: string;
     reader_url: string;
@@ -85,6 +89,10 @@ export interface AppConfig {
     maxDisplayChars: number;
     maxContextLength: number;
   };
+  appearance: {
+    colorPrimary: string;
+    appBgOpacity: number;
+  };
   search: {
     searxngUrl: string;
     readerUrl: string;
@@ -123,6 +131,10 @@ function transform(raw: RawAppConfig): AppConfig {
       maxDisplayLines: raw.quote.max_display_lines,
       maxDisplayChars: raw.quote.max_display_chars,
       maxContextLength: raw.quote.max_context_length,
+    },
+    appearance: {
+      colorPrimary: raw.appearance.color_primary,
+      appBgOpacity: raw.appearance.app_bg_opacity,
     },
     search: {
       searxngUrl: raw.search.searxng_url,
@@ -266,6 +278,10 @@ export const DEFAULT_CONFIG: AppConfig = {
     maxDisplayLines: 4,
     maxDisplayChars: 300,
     maxContextLength: 4096,
+  },
+  appearance: {
+    colorPrimary: '#ff8d5c',
+    appBgOpacity: 0.91,
   },
   search: {
     searxngUrl: 'http://127.0.0.1:8888',

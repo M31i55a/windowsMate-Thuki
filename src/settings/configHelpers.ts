@@ -34,6 +34,12 @@ const HELPERS = {
     max_context_length:
       'How many characters of the quoted text are actually sent to the AI. Anything past this is cut off. Raise if you quote long passages; lower if your model has a small context window.',
   },
+  appearance: {
+    color_primary:
+      'The primary accent color used throughout the UI for buttons, highlights, and accents. Enter a color as a hex value (e.g., #ff8d5c).',
+    app_bg_opacity:
+      'How transparent the Mate window is. Raise for more opaque (less see-through); lower for more transparent so the background shows through more.',
+  },
   search: {
     searxng_url:
       "Where Mate's local search engine (SearXNG) is running. Keep this on 127.0.0.1; pointing it at a remote host leaks every search query.",

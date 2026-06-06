@@ -25,6 +25,7 @@ use super::defaults::{
     DEFAULT_GATEWAY_ENABLED, DEFAULT_GATEWAY_PORT,
     DEFAULT_TTS_VOICE, DEFAULT_TTS_RATE, DEFAULT_TTS_PITCH,
     DEFAULT_AGENT_PROVIDER, DEFAULT_AGENT_MODEL, DEFAULT_AGENT_BASE_URL,
+    DEFAULT_COLOR_PRIMARY, DEFAULT_APP_BG_OPACITY,
 };
 
 /// Static, user-tunable inference daemon configuration.
@@ -128,6 +129,25 @@ impl Default for QuoteSection {
             max_display_lines: DEFAULT_QUOTE_MAX_DISPLAY_LINES,
             max_display_chars: DEFAULT_QUOTE_MAX_DISPLAY_CHARS,
             max_context_length: DEFAULT_QUOTE_MAX_CONTEXT_LENGTH,
+        }
+    }
+}
+
+/// Appearance configuration for colors and transparency.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct AppearanceSection {
+    /// Primary accent color as a hex string (e.g., "#ff8d5c").
+    pub color_primary: String,
+    /// Window background opacity (0.3 to 1.0). 0.91 = 91% opaque.
+    pub app_bg_opacity: f64,
+}
+
+impl Default for AppearanceSection {
+    fn default() -> Self {
+        Self {
+            color_primary: DEFAULT_COLOR_PRIMARY.to_string(),
+            app_bg_opacity: DEFAULT_APP_BG_OPACITY,
         }
     }
 }
@@ -308,6 +328,7 @@ pub struct AppConfig {
     pub prompt: PromptSection,
     pub window: WindowSection,
     pub quote: QuoteSection,
+    pub appearance: AppearanceSection,
     pub search: SearchSection,
     pub debug: DebugSection,
     pub gateway: GatewaySection,

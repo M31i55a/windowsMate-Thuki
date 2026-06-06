@@ -16,14 +16,8 @@ interface DisplayTabProps {
 }
 
 export function DisplayTab({ config, resyncToken, onSaved }: DisplayTabProps) {
-  const [primaryColor, setPrimaryColor] = useState(
-    () => localStorage.getItem('mate-color-primary') ?? '#ff8d5c',
-  );
   const [bubbleColor, setBubbleColor] = useState(
     () => localStorage.getItem('mate-bubble-color') ?? '#ff8d5c',
-  );
-  const [transparency, setTransparency] = useState(
-    () => Number(localStorage.getItem('mate-bg-opacity-pct') ?? '92'),
   );
   const [blur, setBlur] = useState(
     () => Number(localStorage.getItem('mate-chat-blur-px') ?? '10'),
@@ -34,22 +28,6 @@ export function DisplayTab({ config, resyncToken, onSaved }: DisplayTabProps) {
     localStorage.setItem('mate-bubble-color', color);
     document.documentElement.style.setProperty('--bubble-color', color);
     void emit('mate://appearance', { bubbleColor: color, primaryColor: null, opacity: null, blur: null });
-  }
-
-  function applyPrimaryColor(color: string) {
-    setPrimaryColor(color);
-    localStorage.setItem('mate-color-primary', color);
-    document.documentElement.style.setProperty('--color-primary', color);
-    void emit('mate://appearance', { bubbleColor: null, primaryColor: color, opacity: null, blur: null });
-  }
-
-  function applyTransparency(pct: number) {
-    setTransparency(pct);
-    const opacity = (pct / 100).toFixed(2);
-    localStorage.setItem('mate-bg-opacity-pct', String(pct));
-    localStorage.setItem('mate-bg-opacity', opacity);
-    document.documentElement.style.setProperty('--app-bg-opacity', opacity);
-    void emit('mate://appearance', { bubbleColor: null, primaryColor: null, opacity, blur: null });
   }
 
   function applyBlur(px: number) {
@@ -140,15 +118,29 @@ export function DisplayTab({ config, resyncToken, onSaved }: DisplayTabProps) {
       </Section>
 
       <Section heading="Appearance">
-        <SettingRow label="Primary accent color">
-          <input
-            type="color"
-            value={primaryColor}
-            onChange={(e) => applyPrimaryColor(e.target.value)}
-            aria-label="Primary accent color"
-            style={{ width: 40, height: 28, padding: 2, cursor: 'pointer', borderRadius: 6, border: '1px solid rgba(255,255,255,0.15)', background: 'transparent' }}
-          />
-        </SettingRow>
+        <SaveField
+          section="appearance"
+          fieldKey="color_primary"
+          label="Primary accent color"
+          helper={configHelp('appearance', 'color_primary')}
+          initialValue={config.appearance.color_primary}
+          resyncToken={resyncToken}
+          onSaved={onSaved}
+          render={(value, setValue) => (
+            <input
+              type="color"
+              value={value}
+              onChange={(e) => {
+                const newColor = e.target.value;
+                setValue(newColor);
+                document.documentElement.style.setProperty('--color-primary', newColor);
+                void emit('mate://appearance', { bubbleColor: null, primaryColor: newColor, opacity: null, blur: null });
+              }}
+              aria-label="Primary accent color"
+              style={{ width: 40, height: 28, padding: 2, cursor: 'pointer', borderRadius: 6, border: '1px solid rgba(255,255,255,0.15)', background: 'transparent' }}
+            />
+          )}
+        />
         <SettingRow label="Chat bubble color">
           <input
             type="color"
@@ -158,17 +150,31 @@ export function DisplayTab({ config, resyncToken, onSaved }: DisplayTabProps) {
             style={{ width: 40, height: 28, padding: 2, cursor: 'pointer', borderRadius: 6, border: '1px solid rgba(255,255,255,0.15)', background: 'transparent' }}
           />
         </SettingRow>
-        <SettingRow label="Window transparency">
-          <NumberSlider
-            value={transparency}
-            min={50}
-            max={100}
-            step={1}
-            unit="%"
-            onChange={applyTransparency}
-            ariaLabel="Window transparency"
-          />
-        </SettingRow>
+        <SaveField
+          section="appearance"
+          fieldKey="app_bg_opacity"
+          label="Window transparency"
+          helper={configHelp('appearance', 'app_bg_opacity')}
+          initialValue={config.appearance.app_bg_opacity * 100}
+          resyncToken={resyncToken}
+          onSaved={onSaved}
+          render={(value, setValue) => (
+            <NumberSlider
+              value={value}
+              min={30}
+              max={100}
+              step={1}
+              unit="%"
+              onChange={(pct) => {
+                setValue(pct);
+                const opacity = (pct / 100).toFixed(2);
+                document.documentElement.style.setProperty('--app-bg-opacity', opacity);
+                void emit('mate://appearance', { bubbleColor: null, primaryColor: null, opacity, blur: null });
+              }}
+              ariaLabel="Window transparency"
+            />
+          )}
+        />
         <SettingRow label="Chat background blur">
           <NumberSlider
             value={blur}
@@ -177,7 +183,7 @@ export function DisplayTab({ config, resyncToken, onSaved }: DisplayTabProps) {
             step={1}
             unit="px"
             onChange={applyBlur}
-            ariaLabel="Chat background blur"
+            aria-label="Chat background blur"
           />
         </SettingRow>
       </Section>

@@ -25,6 +25,10 @@ export interface RawAppConfig {
     max_display_chars: number;
     max_context_length: number;
   };
+  appearance: {
+    color_primary: string;
+    app_bg_opacity: number;
+  };
   search: {
     searxng_url: string;
     reader_url: string;

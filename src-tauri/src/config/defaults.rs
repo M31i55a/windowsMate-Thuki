@@ -61,6 +61,10 @@ pub const DEFAULT_QUOTE_MAX_DISPLAY_LINES: u32 = 4;
 pub const DEFAULT_QUOTE_MAX_DISPLAY_CHARS: u32 = 300;
 pub const DEFAULT_QUOTE_MAX_CONTEXT_LENGTH: u32 = 4096;
 
+/// Appearance defaults (colors and transparency).
+pub const DEFAULT_COLOR_PRIMARY: &str = "#ff8d5c";
+pub const DEFAULT_APP_BG_OPACITY: f64 = 0.91;
+
 /// Numeric sanity bounds used by the loader to reject values that would brick
 /// the UI. Out-of-bounds values fall back to compiled defaults. The bounds
 /// themselves are intentionally generous: the intent is to catch typos
@@ -71,6 +75,9 @@ pub const BOUNDS_MAX_IMAGES: (u32, u32) = (1, 20);
 pub const BOUNDS_QUOTE_MAX_DISPLAY_LINES: (u32, u32) = (1, 100);
 pub const BOUNDS_QUOTE_MAX_DISPLAY_CHARS: (u32, u32) = (1, 10_000);
 pub const BOUNDS_QUOTE_MAX_CONTEXT_LENGTH: (u32, u32) = (1, 65_536);
+
+/// Appearance bounds.
+pub const BOUNDS_APP_BG_OPACITY: (f64, f64) = (0.3, 1.0);
 
 /// Search service default URLs. Match the Docker sandbox bindings in
 /// `sandbox/docker-compose.yml`. Users running SearXNG or the reader
@@ -242,6 +249,9 @@ pub const ALLOWED_FIELDS: &[(&str, &str)] = &[
     ("quote", "max_display_lines"),
     ("quote", "max_display_chars"),
     ("quote", "max_context_length"),
+    // [appearance]
+    ("appearance", "color_primary"),
+    ("appearance", "app_bg_opacity"),
     // [search]
     ("search", "searxng_url"),
     ("search", "reader_url"),
@@ -272,7 +282,7 @@ pub const ALLOWED_FIELDS: &[(&str, &str)] = &[
 /// Authoritative allowlist of section names accepted by `reset_config`.
 /// Mirrors the top-level structure of `AppConfig`.
 pub const ALLOWED_SECTIONS: &[&str] =
-    &["inference", "prompt", "window", "quote", "search", "debug", "gateway", "tts", "agent"];
+    &["inference", "prompt", "window", "quote", "appearance", "search", "debug", "gateway", "tts", "agent"];
 
 /// Special turn-boundary tokens used by the major Ollama-served model families.
 /// Ollama normally parses these out of `/api/chat` responses, but some fine-tunes
