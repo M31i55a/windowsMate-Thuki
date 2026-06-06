@@ -1,8 +1,8 @@
 /**
  * Window controls bar for the overlay.
  *
- * macOS-style traffic-light dots (close/minimize-dec/zoom-dec) + model picker
- * chip + action buttons on the left, minimize on the right.
+ * macOS-style close dot + model picker chip + action buttons on the left,
+ * minimize on the right.
  */
 
 import { memo } from 'react';
@@ -80,8 +80,7 @@ export const WindowControls = memo(function WindowControls({
               <path d="M1 1L5 5M5 1L1 5" stroke="rgba(0,0,0,0.4)" strokeWidth="1.2" strokeLinecap="round" />
             </svg>
           </button>
-          <div aria-hidden="true" className="w-3 h-3 rounded-full bg-[#FFBD2E] flex-shrink-0" />
-          <div aria-hidden="true" className="w-3 h-3 rounded-full bg-[#28C840] flex-shrink-0" />
+
         </div>
 
         {onModelPickerToggle !== undefined && (

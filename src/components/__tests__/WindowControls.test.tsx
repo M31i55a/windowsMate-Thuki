@@ -16,16 +16,7 @@ describe('WindowControls', () => {
     expect(closeDot).not.toBeNull();
   });
 
-  it('renders decorative minimize and zoom dots (aria-hidden elements)', () => {
-    const { container } = render(<WindowControls onClose={vi.fn()} />);
-    const hiddenDots = container.querySelectorAll('[aria-hidden="true"]');
-    // The two decorative divs (minimize + zoom) plus SVG inside close button = 3
-    // but we only care that at least 2 non-button aria-hidden elements exist
-    const decorativeDivs = Array.from(hiddenDots).filter(
-      (el) => el.tagName.toLowerCase() === 'div',
-    );
-    expect(decorativeDivs).toHaveLength(2);
-  });
+
 
   it('renders divider separator (bg-surface-border)', () => {
     const { container } = render(<WindowControls onClose={vi.fn()} />);
