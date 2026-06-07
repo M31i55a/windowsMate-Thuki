@@ -134,11 +134,12 @@
   background: transparent;
 }
 .bodyScrollable::-webkit-scrollbar-thumb {
-  background: rgba(255, 141, 92, 0.7);
+  background: var(--color-primary);
   border-radius: 2px;
+  opacity: 0.7;
 }
 .bodyScrollable::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 141, 92, 1);
+  opacity: 1;
 }
 
 .section { margin-bottom: 28px; }
@@ -332,13 +333,13 @@
 .sliderInput::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
   width: 14px; height: 14px; border-radius: 50%;
-  background: linear-gradient(135deg, #ff8d5c 0%, #e06b30 100%);
-  border: none; box-shadow: 0 0 10px rgba(255, 141, 92, 0.45); cursor: grab;
+  background: var(--color-primary);
+  border: none; box-shadow: 0 0 10px var(--color-primary); cursor: grab;
 }
 .sliderInput::-moz-range-thumb {
   width: 14px; height: 14px; border-radius: 50%;
-  background: linear-gradient(135deg, #ff8d5c 0%, #e06b30 100%);
-  border: none; box-shadow: 0 0 10px rgba(255, 141, 92, 0.45); cursor: grab;
+  background: var(--color-primary);
+  border: none; box-shadow: 0 0 10px var(--color-primary); cursor: grab;
 }
 .valChip {
   background: rgba(36, 30, 26, 0.95); color: var(--color-text-primary);
@@ -377,13 +378,13 @@
 .ctxSlider::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
   width: 16px; height: 16px; border-radius: 50%;
-  background: linear-gradient(135deg, #ff8d5c 0%, #e06b30 100%);
-  box-shadow: 0 0 12px rgba(255, 141, 92, 0.55); cursor: grab;
+  background: var(--color-primary);
+  box-shadow: 0 0 12px var(--color-primary); cursor: grab;
 }
 .ctxSlider::-moz-range-thumb {
   width: 16px; height: 16px; border-radius: 50%;
-  background: linear-gradient(135deg, #ff8d5c 0%, #e06b30 100%);
-  border: none; box-shadow: 0 0 12px rgba(255, 141, 92, 0.55); cursor: grab;
+  background: var(--color-primary);
+  border: none; box-shadow: 0 0 12px var(--color-primary); cursor: grab;
 }
 .ctxTickRow { position: relative; height: 14px; margin: 0 8px 10px 8px; }
 .ctxTick { position: absolute; transform: translateX(-50%); font-size: 9.5px; color: rgba(138,138,142,0.5); font-variant-numeric: tabular-nums; white-space: nowrap; }
