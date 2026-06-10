@@ -1408,6 +1408,89 @@ function App() {
       return;
     }
 
+    // Handle /read command: read text aloud via TTS.
+    if (found.has('/read')) {
+      const LANG_MAP: Record<string, string> = {
+        french: 'fr', spanish: 'es', german: 'de', italian: 'it',
+        portuguese: 'pt', japanese: 'ja', korean: 'ko', chinese: 'zh',
+        russian: 'ru', arabic: 'ar', hindi: 'hi', dutch: 'nl',
+        polish: 'pl', turkish: 'tr', swedish: 'sv', danish: 'da',
+        finnish: 'fi', norwegian: 'nb', czech: 'cs', romanian: 'ro',
+        hungarian: 'hu', thai: 'th', vietnamese: 'vi', greek: 'el',
+        hebrew: 'he', indonesian: 'id', ukrainian: 'uk', english: 'en',
+        en: 'en', fr: 'fr', de: 'de', es: 'es', it: 'it', pt: 'pt',
+        ja: 'ja', ko: 'ko', zh: 'zh', ru: 'ru', ar: 'ar', hi: 'hi',
+        nl: 'nl', pl: 'pl', tr: 'tr', sv: 'sv', da: 'da', fi: 'fi',
+        nb: 'nb', cs: 'cs', ro: 'ro', hu: 'hu', th: 'th', vi: 'vi',
+        el: 'el', he: 'he', id: 'id', uk: 'uk',
+      };
+
+      // eslint-disable-next-line no-control-regex
+      const CONTROL_CHARS_READ = /[\x00-\x08\x0b\x0c\x0e-\x1f]/g;
+      const sanitizedCtx = selectedContext?.replace(CONTROL_CHARS_READ, '').trim();
+
+      const readArgs = strippedMessage.trim();
+      let languageHint: string | undefined;
+
+      const inMatch = readArgs.match(/^(?:read\s+)?in\s+(.+)$/i);
+      if (inMatch) {
+        languageHint = inMatch[1].trim();
+      } else if (readArgs && !readArgs.includes(' ')) {
+        const lower = readArgs.toLowerCase();
+        if (LANG_MAP[lower]) languageHint = readArgs;
+      }
+
+      let textToRead: string;
+      if (sanitizedCtx) {
+        textToRead = sanitizedCtx;
+      } else {
+        const remaining = languageHint
+          ? readArgs.slice(languageHint.length).trim()
+          : readArgs;
+        if (!remaining) return;
+        textToRead = remaining;
+      }
+
+      let voice: string | undefined;
+      if (languageHint) {
+        const langCode = LANG_MAP[languageHint.toLowerCase()];
+        if (langCode) {
+          const match = ttsVoices.find((v) =>
+            v.Locale.toLowerCase().startsWith(langCode),
+          );
+          if (match) voice = match.ShortName;
+        }
+      }
+
+      injectMessages([{ id: crypto.randomUUID(), role: 'user', content: trimmedQuery }]);
+
+      const readMsgId = crypto.randomUUID();
+      const indicator = voice
+        ? `Reading aloud (${voice})…`
+        : 'Reading aloud…';
+      injectMessages([
+        {
+          id: readMsgId,
+          role: 'assistant',
+          content: indicator,
+        },
+      ]);
+
+      void ttsStop();
+      void ttsSpeak(readMsgId, textToRead, voice);
+
+      setQuery('');
+      setSelectedContext(null);
+      for (const img of attachedImages) {
+        URL.revokeObjectURL(img.blobUrl);
+      }
+      setAttachedImages([]);
+      setAttachedFiles([]);
+      /* v8 ignore next */
+      inputRef.current!.style.height = 'auto';
+      return;
+    }
+
     // Open file picker if /file is present and no files are attached yet.
     // This block runs before the "nothing to send" early return so that typing
     // just "/file" (no additional text) still opens the picker.

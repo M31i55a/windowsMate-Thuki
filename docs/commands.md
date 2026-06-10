@@ -17,17 +17,19 @@ This means you can highlight text anywhere on screen, summon Mate with Ctrl+Spac
 
 ## /screen
 
-Captures your screen and attaches it as context for the current message.
+Captures your screen and attaches it as context for the current message. Use /screen region select to draw a crop rectangle instead of capturing the full screen.
 
-**Usage:** `/screen [optional message]`
+**Usage:** `/screen [region select] [optional message]`
 
 **Examples:**
 - /screen: sends a screenshot with no additional message
 - /screen what is this error?: attaches a screenshot and asks a question about it
+- /screen region select: opens a crosshair overlay to draw a region rectangle
+- /screen region select my error details: captures region and asks about it
 
-**Behavior:** The screenshot is taken when you submit the message. Mate's own window is excluded from the capture, and the image appears in your message bubble like a pasted screenshot.
+**Behavior:** The screenshot is taken when you submit the message. Mate's own window is excluded from the capture, and the image appears in your message bubble like a pasted screenshot. Use /screen region select to draw a crop rectangle on screen instead of capturing everything—the region selection overlay will activate and let you click-drag to select the area you want to capture.
 
-**Composable:** /screen can combine with /think and utility commands. For example, /screen /rewrite captures the screen and rewrites whatever text the model can see.
+**Composable:** /screen can combine with /think and utility commands. For example, /screen /rewrite captures the screen and rewrites whatever text the model can see. Region selection works with /think as well: /think /screen region select.
 
 **Limit:** One /screen capture per message. You may also attach up to 3 images manually for a total of 4 images per message.
 
@@ -94,6 +96,21 @@ Attaches a text file and sends its contents to the model as context.
 **Behavior:** Opens a native file picker when submitted. The selected file's text content is read and included with your message as context. You can also drag and drop text files anywhere in the window.
 
 **Limit:** Text files only. Maximum 1 MB per file, up to 5 files per message.
+
+---
+
+## /favorites
+
+Shows your saved prompt favorites and lets you pin frequently used prompts for reuse.
+
+**Usage:** `/favorites [list|add|remove]`
+
+**Examples:**
+- /favorites: open the favorites panel
+- /favorites add write a polite follow-up email: save a prompt for reuse
+- /favorites remove write a polite follow-up email: delete a saved prompt
+
+**Behavior:** Use /favorites to view saved prompt favorites in a panel. Add a prompt with /favorites add <text> and remove one with /favorites remove <text>. You can also open the panel with Ctrl+P.
 
 ---
 
@@ -183,3 +200,22 @@ Summarizes what a piece of text is about, then extracts every task, action item,
 - /todos [paste a conversation or notes]: processes typed or pasted content
 
 **Behavior:** Responds in two parts: a short paragraph explaining the context and what is at stake, followed by a `- [ ]` checkbox list of all tasks. Each to-do includes who is responsible, plus any deadline or timeframe if mentioned.
+
+---
+
+## /read
+
+Reads the selected or typed text aloud using text-to-speech.
+
+**Usage:** `/read [language] or /read with highlighted text`
+
+**Examples:**
+- /read with highlighted text: reads the selected text aloud in the default voice
+- /read read in French with highlighted text: reads the selected text in a French voice
+- /read Spanish hello world: reads typed text in a Spanish voice
+
+**Behavior:** Uses Microsoft Edge TTS to read text aloud. Specify a language (e.g., "French", "ja", "en") to use a matching voice. Without a language, uses your default TTS voice from Settings.
+
+**Language format:** The target language can be a full name (`French`), ISO code (`fr`, `fra`), or common shorthand.
+
+**Default behavior:** If no language is specified, reads using the default TTS voice configured in Settings → Sound.

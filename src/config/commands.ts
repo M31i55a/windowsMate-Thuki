@@ -294,6 +294,30 @@ export const COMMANDS: readonly Command[] = [
       summary: 'summarize context and extract tasks as markdown checkboxes.',
     },
   },
+  {
+    trigger: '/read',
+    label: '/read',
+    description: 'Read selected or typed text aloud using TTS',
+    docs: {
+      summary:
+        'Reads the selected or typed text aloud using text-to-speech.',
+      usage: '/read [language] or /read with highlighted text',
+      examples: [
+        '/read with highlighted text: reads the selected text aloud in the default voice',
+        '/read read in French with highlighted text: reads the selected text in a French voice',
+        '/read Spanish hello world: reads typed text in a Spanish voice',
+      ],
+      behavior:
+        'Uses Microsoft Edge TTS to read text aloud. Specify a language (e.g., "French", "ja", "en") to use a matching voice. Without a language, uses your default TTS voice from Settings.',
+      languageFormat:
+        'The target language can be a full name (`French`), ISO code (`fr`, `fra`), or common shorthand.',
+      defaultBehavior:
+        'If no language is specified, reads using the default TTS voice configured in Settings → Sound.',
+    },
+    promptHelp: {
+      summary: 'read selected or typed text aloud with TTS.',
+    },
+  },
 ] as const;
 
 /**

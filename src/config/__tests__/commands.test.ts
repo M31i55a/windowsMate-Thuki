@@ -125,6 +125,13 @@ describe('COMMANDS registry', () => {
     expect(cmd?.description.length).toBeGreaterThan(0);
   });
 
+  it('includes the /read command', () => {
+    const cmd = COMMANDS.find((c: Command) => c.trigger === '/read');
+    expect(cmd).toBeDefined();
+    expect(cmd?.label).toBe('/read');
+    expect(cmd?.description.length).toBeGreaterThan(0);
+  });
+
   it('all commands with promptTemplate have $INPUT placeholder', () => {
     for (const cmd of COMMANDS) {
       if (cmd.promptTemplate) {
