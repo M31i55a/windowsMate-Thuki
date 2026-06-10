@@ -104,9 +104,9 @@ Most AI tools require accounts, API keys, or subscriptions that bill you per tok
 - **Region capture:** type `/screen region select` or click the crosshair button in the ask bar to open a fullscreen drag-to-select overlay — draw a rectangle over any part of your screen and the cropped region is attached as context. Add text after the command (e.g., `/screen region select explain`) and it will be injected into the input for you to review before submitting
 - **Agent mode:** type `/do` to let Mate autonomously control your desktop — launch apps, type text, press key combos, and complete multi-step tasks. Works with both vision and text-only local models; cloud providers ask for screenshot consent before sending any screen data off-device
 - **Agentic search:** type `/search` to run a fully local, multi-step search pipeline (SearXNG + Trafilatura reader) with a live trace of every query, fetch, and judgement step
-- **Slash commands:** built-in commands for live search and prompt shortcuts: `/do`, `/file`, `/favorites`, `/search`, `/screen`, `/think`, `/translate`, `/rewrite`, `/tldr`, `/refine`, `/bullets`, `/todos`. Highlight text anywhere, summon Mate, type a command, and hit Enter
+- **Slash commands:** built-in commands for live search, prompt shortcuts, and TTS: `/do`, `/file`, `/favorites`, `/search`, `/screen`, `/think`, `/translate`, `/rewrite`, `/tldr`, `/refine`, `/bullets`, `/todos`, `/read`. Highlight text anywhere, summon Mate, type a command, and hit Enter
 - **Extended reasoning:** type `/think` to have the model reason through a problem step by step before answering
-- **Voice output (TTS):** click the speaker icon on any assistant message to have it read aloud using Microsoft Edge Neural TTS — pick from a rich set of voices in Settings → Sound
+- **Voice output (TTS):** click the speaker icon on any assistant message, or type `/read` with selected or typed text, to have it read aloud using Microsoft Edge Neural TTS — pick from a rich set of voices in Settings → Sound
 - **Conversation trace recorder:** optionally record every chat and `/search` session as JSON-Lines for debugging and forensics — off by default; enable from Settings or set `[debug] trace_enabled = true` in `config.toml`
 - **In-app model picker:** browse models installed in your local Ollama and switch the active model from the ask bar or chat header without opening a config file; online models from OpenRouter are listed alongside local ones
 - **Cross-model continuity:** swap models mid-conversation and Mate sanitizes history and filters capabilities (vision, thinking) to whatever the new model supports
@@ -316,7 +316,7 @@ Mate inherits the Thuki roadmap and adds Windows-specific improvements:
 ### Secretary Superpowers
 
 - **Tool integrations via [MCP](https://modelcontextprotocol.io/):** connect Mate to Gmail, Slack, Discord, Google Calendar, and any other MCP-compatible service
-- **More slash commands:** expanding the existing `/do`, `/file`, `/search`, `/screen`, `/think`, `/translate`, `/rewrite`, `/tldr`, `/refine`, `/bullets`, and `/todos` set
+- **More slash commands:** expanding the existing `/do`, `/file`, `/search`, `/screen`, `/think`, `/translate`, `/rewrite`, `/tldr`, `/refine`, `/bullets`, `/todos`, and `/read` set
 
 ### Better AI Control
 
