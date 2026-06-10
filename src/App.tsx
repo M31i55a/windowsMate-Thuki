@@ -1410,6 +1410,64 @@ function App() {
 
     // Handle /read command: read text aloud via TTS.
     if (found.has('/read')) {
+      // Auto-detect text language from content when no explicit hint is given.
+      const detectTextLanguage = (text: string): string | undefined => {
+        const t = text.trim();
+        if (!t) return undefined;
+
+        // Non-Latin scripts
+        if (/[\u0400-\u04FF]/.test(t)) return 'russian';
+        if (/[\u0590-\u05FF]/.test(t)) return 'hebrew';
+        if (/[\u0600-\u06FF]/.test(t)) return 'arabic';
+        if (/[\u3040-\u309F\u30A0-\u30FF]/.test(t)) return 'japanese';
+        if (/[\u4E00-\u9FFF]/.test(t)) return 'chinese';
+        if (/[\uAC00-\uD7AF]/.test(t)) return 'korean';
+        if (/[\u0E00-\u0E7F]/.test(t)) return 'thai';
+        if (/[\u0370-\u03FF]/.test(t)) return 'greek';
+        if (/[\u0900-\u097F]/.test(t)) return 'hindi';
+
+        // Latin script diacritics
+        if (/[ñÑ¿¡]/.test(t)) return 'spanish';
+        if (/[àâçéèêëîïôûùœŒ]/.test(t)) return 'french';
+        if (/[ß]/.test(t) || /[äöüÄÖÜ]/.test(t)) return 'german';
+        if (/[ãõÃÕ]/.test(t)) return 'portuguese';
+        if (/[ğĞşŞıİçÇ]/.test(t)) return 'turkish';
+        if (/[ăâđêôơưỠẠ]/u.test(t)) return 'vietnamese';
+        if (/[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/.test(t)) return 'polish';
+        if (/[åÅ]/.test(t)) return /[æøÆØ]/.test(t) ? 'danish' : 'swedish';
+        if (/[æøÆØ]/.test(t)) return 'norwegian';
+        if (/[čČšŠžŽđĐ]/.test(t)) return /[đĐ]/.test(t) ? 'serbian' : 'czech';
+        if (/[ăâîșțĂÂÎȘȚ]/.test(t)) return 'romanian';
+        if (/[īūōāļķņģĢ]/.test(t)) return 'latvian';
+        if (/[ėęūųšžąč]/.test(t)) return 'lithuanian';
+        if (/[ċġħż]/.test(t)) return 'maltese';
+        if (/[ëË]/.test(t) && /[çÇ]/.test(t)) return 'albanian';
+
+        // Ambiguous Latin: score common words (avoid overlap: "la" in es/fr/it, "le" in fr/it)
+        const lower = t.toLowerCase();
+        const words = lower.split(/\s+/).filter(Boolean);
+        const count = (list: string[]) =>
+          list.reduce((acc, w) => acc + (words.includes(w) ? 1 : 0), 0);
+
+        const sp = count(['el', 'los', 'las', 'que', 'por', 'para', 'con', 'del', 'más', 'pero', 'entre', 'esto', 'muy', 'sin', 'ella', 'nos', 'os', 'casa', 'agua', 'día', 'año', 'hombre', 'mujer', 'niño', 'gracias', 'hola', 'adiós', 'bueno', 'grande']);
+        const fr = count(['le', 'les', 'des', 'est', 'dans', 'sur', 'avec', 'plus', 'tout', 'mais', 'nous', 'vous', 'ils', 'elles', 'ces', 'leur', 'cette', 'être', 'avoir', 'faire', 'maison', 'bonjour', 'merci', 'très', 'monde']);
+        const pt = count(['ão', 'ões', 'ães', 'ou', 'uma', 'mas', 'com', 'dos', 'das', 'pelo', 'pela', 'são', 'vai', 'foi', 'nas']);
+        const it = count(['il', 'lo', 'gli', 'del', 'nel', 'nella', 'che', 'ha', 'ho', 'hanno', 'sia', 'siamo', 'sono', 'grazie', 'buongiorno', 'molto', 'libro']);
+        const nl = count(['het', 'een', 'de', 'van', 'met', 'voor', 'door', 'naar', 'zijn', 'ook', 'nog', 'niet', 'maar', 'heeft', 'wordt', 'hij', 'zij']);
+        const id = count(['yang', 'dan', 'di', 'ke', 'dengan', 'untuk', 'ini', 'itu', 'dari', 'ada', 'tidak', 'akan', 'dapat', 'telah']);
+
+        const scores: [string, number][] = [
+          ['spanish', sp], ['french', fr], ['portuguese', pt],
+          ['italian', it], ['dutch', nl], ['indonesian', id],
+        ];
+        const sorted = [...scores].sort((a, b) => b[1] - a[1]);
+        if (sorted[0][1] >= 1 && sorted[0][1] > sorted[1][1]) {
+          return sorted[0][0];
+        }
+
+        return undefined;
+      };
+
       const LANG_MAP: Record<string, string> = {
         french: 'fr', spanish: 'es', german: 'de', italian: 'it',
         portuguese: 'pt', japanese: 'ja', korean: 'ko', chinese: 'zh',
@@ -1418,11 +1476,14 @@ function App() {
         finnish: 'fi', norwegian: 'nb', czech: 'cs', romanian: 'ro',
         hungarian: 'hu', thai: 'th', vietnamese: 'vi', greek: 'el',
         hebrew: 'he', indonesian: 'id', ukrainian: 'uk', english: 'en',
+        serbian: 'sr', maltese: 'mt', albanian: 'sq', latvian: 'lv',
+        lithuanian: 'lt',
         en: 'en', fr: 'fr', de: 'de', es: 'es', it: 'it', pt: 'pt',
         ja: 'ja', ko: 'ko', zh: 'zh', ru: 'ru', ar: 'ar', hi: 'hi',
         nl: 'nl', pl: 'pl', tr: 'tr', sv: 'sv', da: 'da', fi: 'fi',
         nb: 'nb', cs: 'cs', ro: 'ro', hu: 'hu', th: 'th', vi: 'vi',
-        el: 'el', he: 'he', id: 'id', uk: 'uk',
+        el: 'el', he: 'he', id: 'id', uk: 'uk', sr: 'sr', mt: 'mt',
+        sq: 'sq', lv: 'lv', lt: 'lt',
       };
 
       // eslint-disable-next-line no-control-regex
@@ -1432,6 +1493,7 @@ function App() {
       const readArgs = strippedMessage.trim();
       let languageHint: string | undefined;
 
+      // 1. Try explicit language from typed text
       const inMatch = readArgs.match(/^(?:read\s+)?in\s+(.+)$/i);
       if (inMatch) {
         languageHint = inMatch[1].trim();
@@ -1449,6 +1511,12 @@ function App() {
           : readArgs;
         if (!remaining) return;
         textToRead = remaining;
+      }
+
+      // 2. If no explicit language, auto-detect from the text content
+      if (!languageHint) {
+        const detected = detectTextLanguage(textToRead);
+        if (detected) languageHint = detected;
       }
 
       let voice: string | undefined;
