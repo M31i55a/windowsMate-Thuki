@@ -65,7 +65,7 @@ pub enum AgentEvent {
     },
 }
 
-// ─── Confirmation state ─────────────────────────────────────────────────────────
+// ─── Confirmation state of the agent loop ───────────────────────────────────────────────────────────
 
 /// Number of actions that require confirmation before auto-executing.
 /// Set to 0 so the agent runs uninterrupted — the user already consented
