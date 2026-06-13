@@ -132,12 +132,12 @@ Favorites are stored locally in the app state so they persist across overlay ses
 
 ## Read Aloud (`/read`)
 
-Type `/read` to have text read aloud using Microsoft Edge Neural TTS. The text can come from highlighted/selected text in any app (passed via context) or typed directly after the command (e.g., `/read hello world`).
+Highlight any text in any app, summon Mate with double-tap <kbd>Ctrl</kbd>, and type `/read` — Mate reads the highlighted text aloud using Microsoft Edge Neural TTS. You can also type text directly after the command (e.g., `/read hello world`).
 
 **Usage:**
-- `/read` — reads highlighted text using the default TTS voice from Settings → Sound
-- `/read French` — reads highlighted text in a French voice
-- `/read Spanish hola mundo` — reads typed text in a Spanish voice
+- `/read` — reads highlighted text aloud using the default TTS voice from Settings → Sound
+- `/read French` — reads highlighted text aloud in a French voice
+- `/read Spanish hola mundo` — reads typed text aloud in a Spanish voice
 
 **Language detection:** When you specify a language, `/read` resolves it to a matching Microsoft Edge Neural TTS voice. Without a language, it auto-detects the text's language by analyzing Unicode scripts (Cyrillic, Arabic, Japanese, Chinese, Korean, etc.), Latin diacritics (ñ, é, ü, ç, etc.), and common-word frequency for ambiguous Latin text.
 
