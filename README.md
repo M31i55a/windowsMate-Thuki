@@ -106,7 +106,7 @@ Most AI tools require accounts, API keys, or subscriptions that bill you per tok
 - **Agentic search:** type `/search` to run a fully local, multi-step search pipeline (SearXNG + Trafilatura reader) with a live trace of every query, fetch, and judgement step
 - **Slash commands:** built-in commands for live search, prompt shortcuts, and TTS: `/do`, `/file`, `/favorites`, `/search`, `/screen`, `/think`, `/translate`, `/rewrite`, `/tldr`, `/refine`, `/bullets`, `/todos`, `/read`. Highlight text anywhere, summon Mate, type a command, and hit Enter
 - **Extended reasoning:** type `/think` to have the model reason through a problem step by step before answering
-- **Voice output (TTS):** click the speaker icon on any assistant message, or type `/read` with selected or typed text, to have it read aloud using Microsoft Edge Neural TTS — pick from a rich set of voices in Settings → Sound
+- **Voice output (TTS):** click the speaker icon on any assistant message, or type `/read` with selected or typed text, to have it read aloud using Microsoft Edge Neural TTS — pick from a rich set of voices in Settings → Sound. `/read` supports 32 languages: English, Spanish, French, German, Italian, Portuguese, Japanese, Korean, Chinese, Russian, Arabic, Hindi, Dutch, Polish, Turkish, Swedish, Danish, Norwegian, Czech, Romanian, Hungarian, Thai, Vietnamese, Greek, Hebrew, Indonesian, Ukrainian, Serbian, Maltese, Albanian, Latvian, and Lithuanian
 - **Conversation trace recorder:** optionally record every chat and `/search` session as JSON-Lines for debugging and forensics — off by default; enable from Settings or set `[debug] trace_enabled = true` in `config.toml`
 - **In-app model picker:** browse models installed in your local Ollama and switch the active model from the ask bar or chat header without opening a config file; online models from OpenRouter are listed alongside local ones
 - **Cross-model continuity:** swap models mid-conversation and Mate sanitizes history and filters capabilities (vision, thinking) to whatever the new model supports
@@ -129,6 +129,41 @@ Use the command form to manage favorites directly from the input bar:
 - `/favorites remove <your prompt>` — delete a saved prompt
 
 Favorites are stored locally in the app state so they persist across overlay sessions on your machine. They do not execute automatically; opening the panel and choosing a saved prompt inserts it into the input field so you can review or edit before sending.
+
+## Read Aloud (`/read`)
+
+Type `/read` to have text read aloud using Microsoft Edge Neural TTS. The text can come from highlighted/selected text in any app (passed via context) or typed directly after the command (e.g., `/read hello world`).
+
+**Usage:**
+- `/read` — reads highlighted text using the default TTS voice from Settings → Sound
+- `/read French` — reads highlighted text in a French voice
+- `/read Spanish hola mundo` — reads typed text in a Spanish voice
+
+**Language detection:** When you specify a language, `/read` resolves it to a matching Microsoft Edge Neural TTS voice. Without a language, it auto-detects the text's language by analyzing Unicode scripts (Cyrillic, Arabic, Japanese, Chinese, Korean, etc.), Latin diacritics (ñ, é, ü, ç, etc.), and common-word frequency for ambiguous Latin text.
+
+### Supported Languages
+
+| Language       | ISO Code | Language       | ISO Code |
+| -------------- | :------: | -------------- | :------: |
+| English        | `en`     | Spanish        | `es`     |
+| French         | `fr`     | German         | `de`     |
+| Italian        | `it`     | Portuguese     | `pt`     |
+| Japanese       | `ja`     | Korean         | `ko`     |
+| Chinese        | `zh`     | Russian        | `ru`     |
+| Arabic         | `ar`     | Hindi          | `hi`     |
+| Dutch          | `nl`     | Polish         | `pl`     |
+| Turkish        | `tr`     | Swedish        | `sv`     |
+| Danish         | `da`     | Finnish        | `fi`     |
+| Norwegian      | `nb`     | Czech          | `cs`     |
+| Romanian       | `ro`     | Hungarian      | `hu`     |
+| Thai           | `th`     | Vietnamese     | `vi`     |
+| Greek          | `el`     | Hebrew         | `he`     |
+| Indonesian     | `id`     | Ukrainian      | `uk`     |
+| Serbian        | `sr`     | Maltese        | `mt`     |
+| Albanian       | `sq`     | Latvian        | `lv`     |
+| Lithuanian     | `lt`     |                |          |
+
+You can specify any language by its full name (case-insensitive) or its 2-letter ISO 639-1 code.
 
 ## Windows-Specific Additions
 
