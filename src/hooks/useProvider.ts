@@ -19,6 +19,7 @@ const DEFAULT_CLAUDE_MODEL = 'claude-3-5-sonnet-20241022';
  * Claude API key for testing.
  * Loaded from environment variable VITE_CLAUDE_API_KEY
  * Set this in your .env file with your actual Anthropic API key
+ * e.g. `VITE_CLAUDE_API_KEY=sk-12345678901234567890123456789012`
  */
 const DEFAULT_CLAUDE_API_KEY = import.meta.env.VITE_CLAUDE_API_KEY || '';
 
