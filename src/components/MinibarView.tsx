@@ -1,11 +1,14 @@
 import { motion } from 'framer-motion';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { AgentStatus } from '../hooks/useAgentMode';
+import type { VoiceStatus } from '../hooks/useVoiceInput';
 
 interface MinibarViewProps {
   status: AgentStatus | null;
   lastMessage: string | null;
   onClick: () => void;
+  voiceStatus?: VoiceStatus;
+  onVoiceToggle?: () => void;
 }
 
 const statusDotColors: Record<string, string> = {
@@ -17,7 +20,24 @@ const statusDotColors: Record<string, string> = {
   error: 'bg-red-400',
 };
 
-export function MinibarView({ status, onClick }: MinibarViewProps) {
+function voiceDotColor(voiceStatus: VoiceStatus | undefined): string {
+  if (!voiceStatus || voiceStatus.type === 'idle') return 'bg-neutral-600';
+  switch (voiceStatus.type) {
+    case 'listening': return 'bg-emerald-400';
+    case 'recording': return 'bg-amber-400';
+    case 'transcribing': return 'bg-sky-400';
+    case 'ai_processing': return 'bg-sky-400';
+    case 'speaking': return 'bg-violet-400';
+    case 'error': return 'bg-red-400';
+  }
+}
+
+function isVoicePulsing(voiceStatus: VoiceStatus | undefined): boolean {
+  if (!voiceStatus) return false;
+  return ['listening', 'recording', 'transcribing'].includes(voiceStatus.type);
+}
+
+export function MinibarView({ status, onClick, voiceStatus, onVoiceToggle }: MinibarViewProps) {
   const dotColor = status ? statusDotColors[status] ?? 'bg-neutral-400' : 'bg-emerald-400';
   const isPulsing = status === 'executing' || status === 'analyzing' || status === 'capturing';
 
@@ -77,6 +97,13 @@ export function MinibarView({ status, onClick }: MinibarViewProps) {
       <span
         className={`absolute top-0 right-0 w-3 h-3 rounded-full ${dotColor} border-2 border-transparent ${isPulsing ? 'animate-pulse' : ''}`}
       />
+      {voiceStatus && voiceStatus.type !== 'idle' && (
+        <motion.span
+          onClick={(e) => { e.stopPropagation(); onVoiceToggle?.(); }}
+          className={`absolute bottom-0 left-0 w-2.5 h-2.5 rounded-full ${voiceDotColor(voiceStatus)} border border-transparent cursor-pointer ${isVoicePulsing(voiceStatus) ? 'animate-pulse' : ''}`}
+          title="Voice input active — click to toggle"
+        />
+      )}
     </motion.div>
   );
 }

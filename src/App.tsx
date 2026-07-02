@@ -15,6 +15,7 @@ import { LogicalSize } from '@tauri-apps/api/dpi';
 import { useOllama } from './hooks/useOllama';
 import type { Message } from './hooks/useOllama';
 import { useTts } from './hooks/useTts';
+import { useVoiceInput } from './hooks/useVoiceInput';
 import { useConversationHistory } from './hooks/useConversationHistory';
 import { useAgentMode } from './hooks/useAgentMode';
 import { useModelSelection } from './hooks/useModelSelection';
@@ -207,6 +208,32 @@ function App() {
     privacyAcknowledged,
     acknowledgePrivacy,
   } = useTts();
+
+  const voice = useVoiceInput();
+
+  // When voice produces a transcription, submit it to the AI pipeline.
+  useEffect(() => {
+    if (voice.status.type === 'ai_processing' && voice.transcribedText) {
+      ask(voice.transcribedText, undefined, undefined);
+    }
+  }, [voice.status, voice.transcribedText, ask]);
+
+  // When AI completes generating a response while voice is active, speak it.
+  const prevMessagesLenRef = useRef(messages.length);
+  useEffect(() => {
+    const prevLen = prevMessagesLenRef.current;
+    prevMessagesLenRef.current = messages.length;
+    if (
+      voice.status.type !== 'idle' &&
+      messages.length > prevLen &&
+      messages.length > 0
+    ) {
+      const last = messages[messages.length - 1];
+      if (last.role === 'assistant' && last.content) {
+        ttsSpeak(last.content, last.id);
+      }
+    }
+  }, [messages, voice.status, ttsSpeak]);
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -2509,6 +2536,8 @@ function App() {
             void invoke('exit_minibar_size');
             setOverlayState('visible');
           }}
+          voiceStatus={voice.status}
+          onVoiceToggle={voice.toggleListening}
         />
       )}
       <ImagePreviewModal

@@ -47,6 +47,11 @@ html-escape = "0.2"
 time = { version = "0.3", features = ["std"] }
 async-trait = "0.1"
 
+# Voice input: microphone capture (VAD-triggered), speech-to-text (whisper.cpp subprocess)
+cpal = "0.15"
+hound = "3"
+half = "2.4.1"
+
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.61", features = [
   "Win32_Foundation",

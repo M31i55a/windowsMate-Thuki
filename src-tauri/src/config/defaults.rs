@@ -277,12 +277,15 @@ pub const ALLOWED_FIELDS: &[(&str, &str)] = &[
     ("agent", "provider"),
     ("agent", "model"),
     ("agent", "base_url"),
+    // [voice]
+    ("voice", "enabled"),
+    ("voice", "wakeword_enabled"),
 ];
 
 /// Authoritative allowlist of section names accepted by `reset_config`.
 /// Mirrors the top-level structure of `AppConfig`.
 pub const ALLOWED_SECTIONS: &[&str] =
-    &["inference", "prompt", "window", "quote", "appearance", "search", "debug", "gateway", "tts", "agent"];
+    &["inference", "prompt", "window", "quote", "appearance", "search", "debug", "gateway", "tts", "agent", "voice"];
 
 /// Special turn-boundary tokens used by the major Ollama-served model families.
 /// Ollama normally parses these out of `/api/chat` responses, but some fine-tunes
@@ -319,6 +322,12 @@ pub const BOUNDS_TTS_PITCH: (i32, i32) = (-100, 100);
 pub const DEFAULT_AGENT_PROVIDER: &str = "ollama";
 pub const DEFAULT_AGENT_MODEL: &str = "";
 pub const DEFAULT_AGENT_BASE_URL: &str = "";
+
+/// Voice input defaults.
+/// Whether the voice listener is enabled on startup.
+pub const DEFAULT_VOICE_ENABLED: bool = false;
+/// Whether wake word ("Mate") detection is enabled.
+pub const DEFAULT_WAKEWORD_ENABLED: bool = true;
 
 pub const STRIP_PATTERNS: &[&str] = &[
     "<|im_start|>",

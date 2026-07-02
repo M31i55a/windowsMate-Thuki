@@ -26,6 +26,7 @@ use super::defaults::{
     DEFAULT_TTS_VOICE, DEFAULT_TTS_RATE, DEFAULT_TTS_PITCH,
     DEFAULT_AGENT_PROVIDER, DEFAULT_AGENT_MODEL, DEFAULT_AGENT_BASE_URL,
     DEFAULT_COLOR_PRIMARY, DEFAULT_APP_BG_OPACITY,
+    DEFAULT_VOICE_ENABLED, DEFAULT_WAKEWORD_ENABLED,
 };
 
 /// Static, user-tunable inference daemon configuration.
@@ -317,6 +318,29 @@ impl Default for AgentSection {
     }
 }
 
+/// Voice input configuration.
+///
+/// Controls the always-listening voice mode: wake word detection, speech-to-text,
+/// and automatic AI response via TTS.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct VoiceSection {
+    /// Whether the voice listener starts automatically with the app.
+    pub enabled: bool,
+    /// Whether wake word ("Mate") detection is enabled. When false, any speech
+    /// triggers voice input (VAD-only mode).
+    pub wakeword_enabled: bool,
+}
+
+impl Default for VoiceSection {
+    fn default() -> Self {
+        Self {
+            enabled: DEFAULT_VOICE_ENABLED,
+            wakeword_enabled: DEFAULT_WAKEWORD_ENABLED,
+        }
+    }
+}
+
 /// Top-level application configuration. Managed Tauri state; every subsystem
 /// reads from `State<RwLock<AppConfig>>` and nowhere else. The loader resolves all
 /// empty strings and out-of-bounds numerics to compiled defaults before the
@@ -334,4 +358,5 @@ pub struct AppConfig {
     pub gateway: GatewaySection,
     pub tts: TtsSection,
     pub agent: AgentSection,
+    pub voice: VoiceSection,
 }

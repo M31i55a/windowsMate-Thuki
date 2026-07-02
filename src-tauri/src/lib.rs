@@ -33,6 +33,7 @@ mod computer_control;
 mod windows_activator;
 
 mod gateway;
+mod voice_activator;
 #[cfg(target_os = "windows")]
 mod windows_focus;
 
@@ -865,6 +866,11 @@ pub fn run() {
             // ── TTS state ────────────────────────────────────────────────
             app.manage(tts::TtsState::new());
 
+            // ── Voice input state ─────────────────────────────────────────
+            app.manage(std::sync::Arc::new(
+                voice_activator::VoiceListenerState::new(),
+            ));
+
             // ── Agent state (Windows only) ────────────────────────────
             #[cfg(target_os = "windows")]
             app.manage(Arc::new(agent::AgentState::new()));
@@ -955,6 +961,15 @@ pub fn run() {
             tts::tts_stop,
             #[cfg(not(coverage))]
             tts::tts_list_voices,
+            // Voice input commands
+            #[cfg(not(coverage))]
+            voice_activator::start_voice_listener,
+            #[cfg(not(coverage))]
+            voice_activator::stop_voice_listener,
+            #[cfg(not(coverage))]
+            voice_activator::is_voice_listener_running,
+            #[cfg(not(coverage))]
+            voice_activator::has_wakeword_reference,
             // Agent commands (Windows only)
             #[cfg(all(target_os = "windows", not(coverage)))]
             agent::start_agent_mode,

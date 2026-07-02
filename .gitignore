@@ -50,3 +50,5 @@ docs/superpowers/
 # SearXNG container dumps upstream defaults here on each start
 sandbox/search-box/searxng/settings.yml.new
 
+#claude
+CLAUDE.md
