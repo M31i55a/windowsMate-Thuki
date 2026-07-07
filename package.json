@@ -50,13 +50,13 @@
     "vite": "^8.0.5"
   },
   "devDependencies": {
-    "@eslint-react/eslint-plugin": "4.2.3",
+    "@eslint-react/eslint-plugin": "5.11.2",
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.2.2",
     "@tauri-apps/cli": "^2.10.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
-    "@types/node": "^25.5.0",
+    "@types/node": "^26.1.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
