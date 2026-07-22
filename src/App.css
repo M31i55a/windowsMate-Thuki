@@ -284,7 +284,7 @@ body {
 }
 
 .thinking-loader {
-  width: 60px;
+  width: 15px;
   aspect-ratio: 1;
   color: var(--color-primary);
   position: relative;
