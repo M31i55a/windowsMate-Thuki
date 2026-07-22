@@ -282,3 +282,47 @@ body {
   background: #b22a1a;
   color: white;
 }
+
+.thinking-loader {
+  width: 60px;
+  aspect-ratio: 1;
+  color: var(--color-primary);
+  position: relative;
+}
+.thinking-loader::before,
+.thinking-loader::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(currentColor 0 0) 0 calc(var(--s, 0) * -100%) / 100% calc(100% / 3),
+    repeating-linear-gradient(90deg, currentColor 0 25%, #0000 0 50%) calc(var(--s, 0) * 100%) 50% / calc(4 * 100% / 3) calc(100% / 3);
+  background-repeat: no-repeat;
+  animation: thinking-loader 2s infinite;
+}
+.thinking-loader::after {
+  --s: -1;
+}
+@keyframes thinking-loader {
+  0%,
+  10% {
+    transform: translateY(calc(var(--s, 1) * 0));
+    background-position: 0 calc(var(--s, 0) * -100%), calc(var(--s, 0) * 100%) 50%;
+  }
+
+  33% {
+    transform: translateY(calc(var(--s, 1) * -20%));
+    background-position: 0 calc(var(--s, 0) * -100%), calc(var(--s, 0) * 100%) 50%;
+  }
+
+  66% {
+    transform: translateY(calc(var(--s, 1) * -20%));
+    background-position: 0 calc(var(--s, 0) * -100%), calc(var(--s, 0) * 100% + 100%) 50%;
+  }
+
+  90%,
+  100% {
+    transform: translateY(calc(var(--s, 1) * 0));
+    background-position: 0 calc(var(--s, 0) * -100%), calc(var(--s, 0) * 100% + 100%) 50%;
+  }
+}
